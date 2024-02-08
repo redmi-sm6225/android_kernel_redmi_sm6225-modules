@@ -714,6 +714,8 @@ int dsi_panel_update_backlight(struct dsi_panel *panel,
 	if (unlikely(panel->bl_config.lp_mode))
 		dsi->mode_flags = mode_flags;*/
 
+	mi_dsi_panel_sync_lhbm_alpha(panel, bl_lvl);
+
 	return rc;
 }
 
