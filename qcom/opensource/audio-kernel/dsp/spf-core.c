@@ -1,5 +1,5 @@
 /* Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,14 +24,13 @@
 #include <dsp/spf-core.h>
 #include <dsp/digital-cdc-rsc-mgr.h>
 
+#define APM_STATE_READY_TIMEOUT_MS    10000
 #define Q6_READY_TIMEOUT_MS 1000
-#define Q6_CLOSE_ALL_TIMEOUT_MS 5000
 #define APM_CMD_GET_SPF_STATE 0x01001021
 #define APM_CMD_CLOSE_ALL 0x01001013
 #define APM_CMD_RSP_GET_SPF_STATE 0x02001007
 #define APM_MODULE_INSTANCE_ID   0x00000001
 #define GPR_SVC_ADSP_CORE 0x3
-#define ADD_CHILD_DEVICES_APM_TIMEOUT_MS 5000
 
 struct spf_core {
 	struct gpr_device *adev;
@@ -158,7 +157,7 @@ done:
  *
  * Return: Will return true if apm is ready and false if not.
  */
-bool spf_core_is_apm_ready(int timeout_ms)
+bool spf_core_is_apm_ready(void)
 {
 	unsigned long  timeout;
 	bool ret = false;
@@ -172,16 +171,13 @@ bool spf_core_is_apm_ready(int timeout_ms)
 	if (!core)
 		goto done;
 
-	timeout = jiffies + msecs_to_jiffies(timeout_ms);
+	timeout = jiffies + msecs_to_jiffies(APM_STATE_READY_TIMEOUT_MS);
 	mutex_lock(&core->lock);
 	for (;;) {
 		if (__spf_core_is_apm_ready(core)) {
 			ret = true;
 			break;
 		}
-		if (!timeout_ms)
-			break;
-
 		usleep_range(50000, 50050);
 		if (!time_after(timeout, jiffies)) {
 			ret = false;
@@ -243,20 +239,8 @@ void spf_core_apm_close_all(void)
 		goto done;
 	}
 
-
-	/* While graph_open is processing by the SPF, apps receives
-	 * userspace(agm/pal) crash which will triggers spf_close_all
-	 * cmd from msm common drivers and immediately calls
-	 * msm_audio_ion_crash_handler() which will un-maps the memory. But
-	 * here SPF is still in processing the graph_open, recieved spf_close_all
-	 * cmd is queued in SPF. Due to un-mapping is done immediately in HLOS
-	 * will resulting in SMMU fault.
-	 * To avoid such scenarios, increased the spf_close_all cmd timeout,
-	 * because the AGM timeout for the graph_open is 4sec, so increase the timeout
-	 * for spf_close_all cmd response until graph open completes or timed out.
-	*/
 	rc = wait_event_timeout(core->wait, (core->resp_received),
-				msecs_to_jiffies(Q6_CLOSE_ALL_TIMEOUT_MS));
+				msecs_to_jiffies(Q6_READY_TIMEOUT_MS));
 	dev_info_ratelimited(spf_core_priv->dev, "%s: wait event unblocked \n", __func__);
 	if (rc > 0 && core->resp_received) {
 		if (core->status != 0)
@@ -339,7 +323,7 @@ static void spf_core_add_child_devices(struct work_struct *work)
 	int ret;
         pr_err("%s:enumarate machine driver\n", __func__);
 
-	if (spf_core_is_apm_ready(ADD_CHILD_DEVICES_APM_TIMEOUT_MS)) {
+	if(spf_core_is_apm_ready()) {
 		dev_err(spf_core_priv->dev, "%s: apm is up\n",
 			__func__);
 	} else {

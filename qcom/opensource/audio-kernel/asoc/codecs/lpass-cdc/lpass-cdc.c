@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of_platform.h>
@@ -663,7 +663,6 @@ int lpass_cdc_register_macro(struct device *dev, u16 macro_id,
 	if (macro_id == VA_MACRO)
 		priv->macro_params[macro_id].reg_wake_irq =
 						ops->reg_wake_irq;
-	mutex_lock(&priv->macro_lock);
 	priv->num_dais += ops->num_dais;
 	priv->num_macros_registered++;
 	priv->macros_supported[macro_id] = true;
@@ -674,7 +673,6 @@ int lpass_cdc_register_macro(struct device *dev, u16 macro_id,
 		ret = lpass_cdc_copy_dais_from_macro(priv);
 		if (ret < 0) {
 			dev_err(dev, "%s: copy_dais failed\n", __func__);
-			mutex_unlock(&priv->macro_lock);
 			return ret;
 		}
 		if (priv->macros_supported[TX_MACRO] == false) {
@@ -687,11 +685,9 @@ int lpass_cdc_register_macro(struct device *dev, u16 macro_id,
 				priv->lpass_cdc_dais, priv->num_dais);
 		if (ret < 0) {
 			dev_err(dev, "%s: register codec failed\n", __func__);
-			mutex_unlock(&priv->macro_lock);
 			return ret;
 		}
 	}
-	mutex_unlock(&priv->macro_lock);
 	return 0;
 }
 EXPORT_SYMBOL(lpass_cdc_register_macro);
@@ -854,7 +850,7 @@ static int lpass_cdc_ssr_enable(struct device *dev, void *data)
 				priv->component,
 				LPASS_CDC_MACRO_EVT_CLK_RESET, 0x0);
 	}
-	TRACE_PRINTK("%s: clk count reset\n", __func__);
+	trace_printk("%s: clk count reset\n", __func__);
 
 	mutex_lock(&priv->clk_lock);
 	priv->pre_dev_up = true;
@@ -881,7 +877,7 @@ static int lpass_cdc_ssr_enable(struct device *dev, void *data)
 	/* Add a 100usec sleep to ensure last register write is done */
 	usleep_range(100,110);
 	lpass_cdc_clk_rsc_enable_all_clocks(priv->clk_dev, false);
-	TRACE_PRINTK("%s: regcache_sync done\n", __func__);
+	trace_printk("%s: regcache_sync done\n", __func__);
 	/* call ssr event for supported macros */
 	for (macro_idx = START_MACRO; macro_idx < MAX_MACRO; macro_idx++) {
 		if (!priv->macro_params[macro_idx].event_handler)
@@ -890,7 +886,7 @@ static int lpass_cdc_ssr_enable(struct device *dev, void *data)
 			priv->component,
 			LPASS_CDC_MACRO_EVT_SSR_UP, 0x0);
 	}
-	TRACE_PRINTK("%s: SSR up events processed by all macros\n", __func__);
+	trace_printk("%s: SSR up events processed by all macros\n", __func__);
 	lpass_cdc_notifier_call(priv, LPASS_CDC_WCD_EVT_SSR_UP);
 	return 0;
 }
@@ -906,6 +902,7 @@ static void lpass_cdc_ssr_disable(struct device *dev, void *data)
 		return;
 	}
 
+	lpass_cdc_notifier_call(priv, LPASS_CDC_WCD_EVT_PA_OFF_PRE_SSR);
 	regcache_cache_only(priv->regmap, true);
 
 	mutex_lock(&priv->clk_lock);
@@ -1326,7 +1323,6 @@ static int lpass_cdc_probe(struct platform_device *pdev)
 	priv->core_audio_vote_count = 0;
 
 	dev_set_drvdata(&pdev->dev, priv);
-	mutex_init(&priv->macro_lock);
 	mutex_init(&priv->io_lock);
 	mutex_init(&priv->clk_lock);
 	mutex_init(&priv->vote_lock);
@@ -1367,7 +1363,6 @@ static int lpass_cdc_remove(struct platform_device *pdev)
 		return -EINVAL;
 
 	of_platform_depopulate(&pdev->dev);
-	mutex_destroy(&priv->macro_lock);
 	mutex_destroy(&priv->io_lock);
 	mutex_destroy(&priv->clk_lock);
 	mutex_destroy(&priv->vote_lock);
@@ -1380,7 +1375,7 @@ int lpass_cdc_runtime_resume(struct device *dev)
 	struct lpass_cdc_priv *priv = dev_get_drvdata(dev->parent);
 	int ret = 0;
 
-	TRACE_PRINTK("%s, enter\n", __func__);
+	trace_printk("%s, enter\n", __func__);
 	dev_dbg(dev,"%s, enter\n", __func__);
 	mutex_lock(&priv->vote_lock);
 	if (priv->lpass_core_hw_vote == NULL) {
@@ -1397,7 +1392,7 @@ int lpass_cdc_runtime_resume(struct device *dev)
 		}
 	}
 	priv->core_hw_vote_count++;
-	TRACE_PRINTK("%s: hw vote count %d\n",
+	trace_printk("%s: hw vote count %d\n",
 		__func__, priv->core_hw_vote_count);
 
 audio_vote:
@@ -1411,28 +1406,16 @@ audio_vote:
 		if (ret < 0) {
 			dev_err_ratelimited(dev, "%s:lpass audio hw enable failed\n",
 				__func__);
-			goto core_clk_vote;
-		}
-	}
-	priv->core_audio_vote_count++;
-	TRACE_PRINTK("%s: audio vote count %d\n",
-		__func__, priv->core_audio_vote_count);
-
-core_clk_vote:
-	if (priv->core_clk_vote_count == 0) {
-		ret = lpass_cdc_clk_rsc_request_clock(dev, TX_CORE_CLK,
-							  TX_CORE_CLK, true);
-		if (ret < 0) {
-			dev_err_ratelimited(dev, "%s:lpass Tx core clk enable failed\n",
-				__func__);
 			goto done;
 		}
 	}
-	priv->core_clk_vote_count++;
+	priv->core_audio_vote_count++;
+	trace_printk("%s: audio vote count %d\n",
+		__func__, priv->core_audio_vote_count);
 
 done:
 	mutex_unlock(&priv->vote_lock);
-	TRACE_PRINTK("%s, leave\n", __func__);
+	trace_printk("%s, leave\n", __func__);
 	dev_dbg(dev,"%s, leave, hw_vote %d, audio_vote %d\n", __func__,
 			priv->core_hw_vote_count, priv->core_audio_vote_count);
 	pm_runtime_set_autosuspend_delay(priv->dev, LPASS_CDC_AUTO_SUSPEND_DELAY);
@@ -1444,7 +1427,7 @@ int lpass_cdc_runtime_suspend(struct device *dev)
 {
 	struct lpass_cdc_priv *priv = dev_get_drvdata(dev->parent);
 
-	TRACE_PRINTK("%s, enter\n", __func__);
+	trace_printk("%s, enter\n", __func__);
 	dev_dbg(dev,"%s, enter\n", __func__);
 	mutex_lock(&priv->vote_lock);
 	if (priv->lpass_core_hw_vote != NULL) {
@@ -1457,7 +1440,7 @@ int lpass_cdc_runtime_suspend(struct device *dev)
 		dev_dbg(dev, "%s: Invalid lpass core hw node\n",
 			__func__);
 	}
-	TRACE_PRINTK("%s: hw vote count %d\n",
+	trace_printk("%s: hw vote count %d\n",
 		__func__, priv->core_hw_vote_count);
 
 	if (priv->lpass_audio_hw_vote != NULL) {
@@ -1470,18 +1453,11 @@ int lpass_cdc_runtime_suspend(struct device *dev)
 		dev_dbg(dev, "%s: Invalid lpass audio hw node\n",
 			__func__);
 	}
-	TRACE_PRINTK("%s: audio vote count %d\n",
+	trace_printk("%s: audio vote count %d\n",
 		__func__, priv->core_audio_vote_count);
 
-	if (--priv->core_clk_vote_count == 0) {
-		lpass_cdc_clk_rsc_request_clock(dev, TX_CORE_CLK,
-						  TX_CORE_CLK, false);
-	}
-	if (priv->core_clk_vote_count < 0)
-		priv->core_clk_vote_count = 0;
-
 	mutex_unlock(&priv->vote_lock);
-	TRACE_PRINTK("%s, leave\n", __func__);
+	trace_printk("%s, leave\n", __func__);
 	dev_dbg(dev,"%s, leave, hw_vote %d, audio_vote %d\n", __func__,
 		priv->core_hw_vote_count, priv->core_audio_vote_count);
 	return 0;
@@ -1493,14 +1469,14 @@ bool lpass_cdc_check_core_votes(struct device *dev)
 {
 	struct lpass_cdc_priv *priv = dev_get_drvdata(dev->parent);
 	bool ret = true;
-	TRACE_PRINTK("%s, enter\n", __func__);
+	trace_printk("%s, enter\n", __func__);
 	mutex_lock(&priv->vote_lock);
 	if (!priv->pre_dev_up ||
 		(priv->lpass_core_hw_vote && !priv->core_hw_vote_count) ||
 		(priv->lpass_audio_hw_vote && !priv->core_audio_vote_count))
 		ret = false;
 	mutex_unlock(&priv->vote_lock);
-	TRACE_PRINTK("%s, leave\n", __func__);
+	trace_printk("%s, leave\n", __func__);
 
 	return ret;
 }

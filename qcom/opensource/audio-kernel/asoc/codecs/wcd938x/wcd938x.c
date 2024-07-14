@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -105,7 +105,7 @@ static u8 tx_mode_bit[] = {
 };
 
 static const DECLARE_TLV_DB_SCALE(line_gain, 0, 7, 1);
-static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 27, 1);
+static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 
 static int wcd938x_handle_post_irq(void *data);
 static int wcd938x_reset(struct device *dev);
@@ -3004,7 +3004,7 @@ static int wcd938x_tx_master_ch_put(struct snd_kcontrol *kcontrol,
 			__func__, ucontrol->value.enumerated.item[0]);
 
 	idx = ucontrol->value.enumerated.item[0];
-	if (idx < 0 || idx >= ARRAY_SIZE(wcd938x_swr_master_ch_map))
+	if (idx < 0 || idx >= ARRAY_SIZE(swr_master_ch_map))
 		return -EINVAL;
 
 	wcd938x->tx_master_ch_map[slave_ch_idx] = wcd938x_slave_get_master_ch(idx);
@@ -3129,13 +3129,13 @@ static const struct snd_kcontrol_new wcd938x_snd_controls[] = {
 
 	SOC_SINGLE_TLV("HPHL Volume", WCD938X_HPH_L_EN, 0, 20, 1, line_gain),
 	SOC_SINGLE_TLV("HPHR Volume", WCD938X_HPH_R_EN, 0, 20, 1, line_gain),
-	SOC_SINGLE_TLV("ADC1 Volume", WCD938X_ANA_TX_CH1, 0, 26, 0,
+	SOC_SINGLE_TLV("ADC1 Volume", WCD938X_ANA_TX_CH1, 0, 20, 0,
 			analog_gain),
-	SOC_SINGLE_TLV("ADC2 Volume", WCD938X_ANA_TX_CH2, 0, 26, 0,
+	SOC_SINGLE_TLV("ADC2 Volume", WCD938X_ANA_TX_CH2, 0, 20, 0,
 			analog_gain),
-	SOC_SINGLE_TLV("ADC3 Volume", WCD938X_ANA_TX_CH3, 0, 26, 0,
+	SOC_SINGLE_TLV("ADC3 Volume", WCD938X_ANA_TX_CH3, 0, 20, 0,
 			analog_gain),
-	SOC_SINGLE_TLV("ADC4 Volume", WCD938X_ANA_TX_CH4, 0, 26, 0,
+	SOC_SINGLE_TLV("ADC4 Volume", WCD938X_ANA_TX_CH4, 0, 20, 0,
 			analog_gain),
 
 	SOC_ENUM_EXT("ADC1 ChMap", tx_master_ch_enum,

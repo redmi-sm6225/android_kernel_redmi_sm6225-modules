@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -1073,7 +1073,7 @@ static int lpass_cdc_wsa2_macro_event_handler(struct snd_soc_component *componen
 	switch (event) {
 	case LPASS_CDC_MACRO_EVT_SSR_DOWN:
 		wsa2_priv->pre_dev_up = false;
-		TRACE_PRINTK("%s, enter SSR down\n", __func__);
+		trace_printk("%s, enter SSR down\n", __func__);
 		if (wsa2_priv->swr_ctrl_data) {
 			swrm_wcd_notify(
 				wsa2_priv->swr_ctrl_data[0].wsa2_swr_pdev,
@@ -1092,7 +1092,7 @@ static int lpass_cdc_wsa2_macro_event_handler(struct snd_soc_component *componen
 	case LPASS_CDC_MACRO_EVT_PRE_SSR_UP:
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_UP:
-		TRACE_PRINTK("%s, enter SSR up\n", __func__);
+		trace_printk("%s, enter SSR up\n", __func__);
 		wsa2_priv->pre_dev_up = true;
 		/* reset swr after ssr/pdr */
 		wsa2_priv->reset_swr = true;
@@ -2906,6 +2906,10 @@ static const struct snd_soc_dapm_widget lpass_cdc_wsa2_macro_dapm_widgets[] = {
 	SND_SOC_DAPM_AIF_OUT("WSA2 AIF_CPS", "WSA2_AIF_CPS Capture", 0,
 		SND_SOC_NOPM, 0, 0),
 
+	SND_SOC_DAPM_AIF_OUT("WSA2 AIF_CPS", "WSA2_AIF_CPS Capture", 0,
+		SND_SOC_NOPM, 0, 0),
+
+
 	SND_SOC_DAPM_MIXER("WSA2_AIF_VI Mixer", SND_SOC_NOPM, LPASS_CDC_WSA2_MACRO_AIF_VI,
 		0, aif_vi_mixer, ARRAY_SIZE(aif_vi_mixer)),
 	SND_SOC_DAPM_MIXER("WSA2_AIF_CPS Mixer", SND_SOC_NOPM, LPASS_CDC_WSA2_MACRO_AIF_CPS,
@@ -3397,7 +3401,7 @@ static int wsa2_swrm_clock(void *handle, bool enable)
 
 	mutex_lock(&wsa2_priv->swr_clk_lock);
 
-	TRACE_PRINTK("%s: %s swrm clock %s\n",
+	trace_printk("%s: %s swrm clock %s\n",
 		dev_name(wsa2_priv->dev), __func__,
 		(enable ? "enable" : "disable"));
 	dev_dbg(wsa2_priv->dev, "%s: swrm clock %s\n",
@@ -3468,7 +3472,7 @@ static int wsa2_swrm_clock(void *handle, bool enable)
 			}
 		}
 	}
-	TRACE_PRINTK("%s: %s swrm clock users: %d\n",
+	trace_printk("%s: %s swrm clock users: %d\n",
 		dev_name(wsa2_priv->dev), __func__,
 		wsa2_priv->swr_clk_users);
 	dev_dbg(wsa2_priv->dev, "%s: swrm clock users %d\n",

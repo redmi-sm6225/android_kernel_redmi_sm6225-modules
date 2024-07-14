@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -132,26 +132,6 @@ static const struct wsa_reg_mask_val reg_init[] = {
 	{REG_FIELD_VALUE(ZX_CTRL1, ZX_DET_SW_SEL, 0x03)},
 };
 
-static const struct wsa_reg_mask_val reg_init_2S[] = {
-	{REG_FIELD_VALUE(CLSH_CTL_1, SLR_MAX, 0x02)},
-	{REG_FIELD_VALUE(CLSH_V_HD_PA, V_HD_PA, 0x13)},
-	{REG_FIELD_VALUE(UVLO_PROG, UVLO1_VTH, 0x03)},
-	{REG_FIELD_VALUE(UVLO_PROG, UVLO1_HYST, 0x03)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG2, DAC_VCM_SHIFT, 0x06)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG3, DAC_VCM_SHIFT, 0x14)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG4, DAC_VCM_SHIFT, 0x19)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG5, DAC_VCM_SHIFT, 0x1B)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG6, DAC_VCM_SHIFT, 0x1C)},
-	{REG_FIELD_VALUE(DAC_VCM_CTRL_REG7, DAC_VCM_SHIFT_FINAL_OVERRIDE, 0x01)},
-};
-
-static const struct wsa_reg_mask_val reg_init_uvlo[] = {
-    {WSA884X_UVLO_PROG, 0xFF, 0x77},
-    {WSA884X_PA_FSM_TIMER0, 0xFF, 0xC0},
-    {WSA884X_UVLO_DEGLITCH_CTL, 0xFF, 0x1D},
-    {WSA884X_UVLO_PROG1, 0xFF, 0x40},
-};
-
 static int wsa884x_handle_post_irq(void *data);
 static int wsa884x_get_temperature(struct snd_soc_component *component,
 				   int *temp);
@@ -167,12 +147,6 @@ enum {
 	SPKR_ADIE_LB,
 };
 
-enum {
-	COMP_PORT_EN_STATUS_BIT = 0,
-	VI_PORT_EN_STATUS_BIT,
-	PBR_PORT_EN_STATUS_BIT,
-	CPS_PORT_EN_STATUS_BIT,
-};
 enum {
 	WSA884X_IRQ_INT_SAF2WAR = 0,
 	WSA884X_IRQ_INT_WAR2SAF,
@@ -230,9 +204,8 @@ static int wsa884x_handle_post_irq(void *data)
 	if (!wsa884x->pa_mute) {
 		do {
 			wsa884x->pa_mute = 0;
-			if (test_bit(SPKR_STATUS, &wsa884x->status_mask))
-				snd_soc_component_update_bits(component,
-					REG_FIELD_VALUE(PA_FSM_EN, GLOBAL_PA_EN, 0x01));
+			snd_soc_component_update_bits(component,
+				REG_FIELD_VALUE(PA_FSM_EN, GLOBAL_PA_EN, 0x01));
 			usleep_range(1000, 1100);
 
 			regmap_read(wsa884x->regmap, WSA884X_INTR_STATUS0, &sts1);
@@ -1315,7 +1288,6 @@ static int wsa884x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			set_bit(COMP_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
 		if (wsa884x->pbr_enable) {
 			wsa884x_set_port(component, SWR_PBR_PORT,
@@ -1323,7 +1295,6 @@ static int wsa884x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			set_bit(PBR_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
 		if (wsa884x->visense_enable) {
 			wsa884x_set_port(component, SWR_VISENSE_PORT,
@@ -1331,7 +1302,6 @@ static int wsa884x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			set_bit(VI_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
 		if (wsa884x->cps_enable) {
 			wsa884x_set_port(component, SWR_CPS_PORT,
@@ -1339,7 +1309,6 @@ static int wsa884x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			set_bit(CPS_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
 		swr_connect_port(wsa884x->swr_slave, &port_id[0], num_port,
 				&ch_mask[0], &ch_rate[0], &num_ch[0],
@@ -1355,41 +1324,33 @@ static int wsa884x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 				&port_type[num_port]);
 		++num_port;
 
-		if (wsa884x->comp_enable &&
-			test_bit(COMP_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask)) {
+		if (wsa884x->comp_enable) {
 			wsa884x_set_port(component, SWR_COMP_PORT,
 					&port_id[num_port], &num_ch[num_port],
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			clear_bit(COMP_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
-		if (wsa884x->pbr_enable &&
-			test_bit(PBR_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask)) {
+		if (wsa884x->pbr_enable) {
 			wsa884x_set_port(component, SWR_PBR_PORT,
 					&port_id[num_port], &num_ch[num_port],
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			clear_bit(PBR_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
-		if (wsa884x->visense_enable &&
-			test_bit(VI_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask)) {
+		if (wsa884x->visense_enable) {
 			wsa884x_set_port(component, SWR_VISENSE_PORT,
 					&port_id[num_port], &num_ch[num_port],
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			clear_bit(VI_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
-		if (wsa884x->cps_enable &&
-			test_bit(CPS_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask)) {
+		if (wsa884x->cps_enable) {
 			wsa884x_set_port(component, SWR_CPS_PORT,
 					&port_id[num_port], &num_ch[num_port],
 					&ch_mask[num_port], &ch_rate[num_port],
 					&port_type[num_port]);
 			++num_port;
-			clear_bit(CPS_PORT_EN_STATUS_BIT, &wsa884x->port_status_mask);
 		}
 		swr_disconnect_port(wsa884x->swr_slave, &port_id[0], num_port,
 				&ch_mask[0], &port_type[0]);
@@ -1543,17 +1504,6 @@ static void wsa884x_codec_init(struct snd_soc_component *component)
 	for (i = 0; i < ARRAY_SIZE(reg_init); i++)
 		snd_soc_component_update_bits(component, reg_init[i].reg,
 					reg_init[i].mask, reg_init[i].val);
-
-	/* Register updates for 2S battery configuration */
-	if (wsa884x->bat_cfg == CONFIG_2S) {
-		for (i = 0; i < ARRAY_SIZE(reg_init_2S); i++)
-			snd_soc_component_update_bits(component, reg_init_2S[i].reg,
-						reg_init_2S[i].mask, reg_init_2S[i].val);
-	}
-
-	for (i = 0; i < ARRAY_SIZE(reg_init_uvlo); i++)
-		snd_soc_component_update_bits(component, reg_init_uvlo[i].reg,
-					reg_init_uvlo[i].mask, reg_init_uvlo[i].val);
 
 	wsa_noise_gate_write(component, wsa884x->noise_gate_mode);
 
@@ -1848,10 +1798,14 @@ static int wsa884x_event_notify(struct notifier_block *nb,
 		return -EINVAL;
 
 	switch (event) {
-	case BOLERO_SLV_EVT_SSR_UP:
+	case BOLERO_SLV_EVT_PA_OFF_PRE_SSR:
+		if (test_bit(SPKR_STATUS, &wsa884x->status_mask))
+			snd_soc_component_update_bits(wsa884x->component,
+				REG_FIELD_VALUE(PA_FSM_EN, GLOBAL_PA_EN, 0x00));
 		wsa884x_swr_down(wsa884x);
-		usleep_range(500, 510);
+		break;
 
+	case BOLERO_SLV_EVT_SSR_UP:
 		wsa884x_swr_up(wsa884x);
 		/* Add delay to allow enumerate */
 		usleep_range(20000, 20010);
@@ -2292,7 +2246,7 @@ static int wsa884x_swr_probe(struct swr_device *pdev)
 	wsa884x_set_gain_parameters(component);
 	wsa884x_set_pbr_parameters(component);
 	/* Must write WO registers in a single write */
-	wo0_val = (0xC0 | (wsa884x->pa_aux_gain << 0x02) | !wsa884x->dev_mode);
+	wo0_val = (0xC | (wsa884x->pa_aux_gain << 0x02) | !wsa884x->dev_mode);
 	snd_soc_component_write(component, WSA884X_ANA_WO_CTL_0, wo0_val);
 	snd_soc_component_write(component, WSA884X_ANA_WO_CTL_1, 0x0);
 	if (wsa884x->rload == WSA_4_OHMS || wsa884x->rload == WSA_6_OHMS)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -166,6 +166,10 @@ struct lpass_cdc_va_macro_priv {
 	int micb_users;
 	u16 default_clk_id;
 	u16 clk_id;
+	int tx_swr_clk_cnt;
+	int va_swr_clk_cnt;
+	int va_clk_status;
+	int tx_clk_status;
 	bool lpi_enable;
 	bool clk_div_switch;
 	int dec_mode[LPASS_CDC_VA_MACRO_NUM_DECIMATORS];
@@ -369,7 +373,7 @@ static int lpass_cdc_va_macro_event_handler(struct snd_soc_component *component,
 		lpass_cdc_va_macro_core_vote(va_priv, false);
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_UP:
-		TRACE_PRINTK("%s, enter SSR up\n", __func__);
+		trace_printk("%s, enter SSR up\n", __func__);
 		/* reset swr after ssr/pdr */
 		va_priv->reset_swr = true;
 		va_priv->dev_up = true;
@@ -402,6 +406,171 @@ static int lpass_cdc_va_macro_event_handler(struct snd_soc_component *component,
 	default:
 		break;
 	}
+	return 0;
+}
+
+static int lpass_cdc_va_macro_swr_clk_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component =
+			snd_soc_dapm_to_component(w->dapm);
+	struct device *va_dev = NULL;
+	struct lpass_cdc_va_macro_priv *va_priv = NULL;
+
+	if (!lpass_cdc_va_macro_get_data(component, &va_dev,
+					 &va_priv, __func__))
+		return -EINVAL;
+
+	dev_dbg(va_dev, "%s: event = %d\n", __func__, event);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		va_priv->va_swr_clk_cnt++;
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		va_priv->va_swr_clk_cnt--;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static int lpass_cdc_va_macro_swr_pwr_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component =
+			snd_soc_dapm_to_component(w->dapm);
+	int ret = 0;
+	struct device *va_dev = NULL;
+	struct lpass_cdc_va_macro_priv *va_priv = NULL;
+	bool vote_err = false;
+
+	if (!lpass_cdc_va_macro_get_data(component, &va_dev,
+					 &va_priv, __func__))
+		return -EINVAL;
+
+	if (!va_priv->use_lpi_mixer_control)
+		return 0;
+
+	dev_dbg(va_dev, "%s: event = %d, lpi_enable = %d\n",
+		__func__, event, va_priv->lpi_enable);
+
+	if (!va_priv->lpi_enable)
+		return ret;
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		dev_dbg(component->dev,
+			"%s: va_swr_clk_cnt %d, tx_swr_clk_cnt %d, tx_clk_status %d\n",
+			__func__, va_priv->va_swr_clk_cnt,
+			va_priv->tx_swr_clk_cnt, va_priv->tx_clk_status);
+		if (va_priv->current_clk_id == VA_CORE_CLK) {
+			 return 0;
+		} else if ( va_priv->va_swr_clk_cnt != 0 &&
+				va_priv->tx_clk_status)  {
+			ret = lpass_cdc_va_macro_core_vote(va_priv, true);
+			if (ret < 0) {
+				dev_err_ratelimited(va_priv->dev,
+					"%s: va request core vote failed\n",
+					__func__);
+				break;
+			}
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+					va_priv->default_clk_id,
+					VA_CORE_CLK,
+					true);
+			lpass_cdc_va_macro_core_vote(va_priv, false);
+			if (ret) {
+				dev_dbg(component->dev,
+					"%s: request clock VA_CLK enable failed\n",
+					__func__);
+				break;
+			}
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+					va_priv->default_clk_id,
+					TX_CORE_CLK,
+					false);
+			if (ret) {
+				dev_dbg(component->dev,
+					"%s: request clock TX_CLK disable failed\n",
+					__func__);
+				lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+					va_priv->default_clk_id,
+					VA_CORE_CLK,
+					false);
+				break;
+			}
+			va_priv->current_clk_id = VA_CORE_CLK;
+		}
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		if (va_priv->current_clk_id == VA_CORE_CLK) {
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+					va_priv->default_clk_id,
+					TX_CORE_CLK,
+					true);
+			if (ret) {
+				dev_err_ratelimited(component->dev,
+					"%s: request clock TX_CLK enable failed\n",
+					__func__);
+				if (va_priv->dev_up)
+					break;
+			}
+			ret = lpass_cdc_va_macro_core_vote(va_priv, true);
+			if (ret < 0) {
+				dev_err_ratelimited(va_priv->dev,
+					"%s: va request core vote failed\n",
+					__func__);
+				if (va_priv->dev_up)
+					break;
+				vote_err = true;
+			}
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+					va_priv->default_clk_id,
+					VA_CORE_CLK,
+					false);
+			if (!vote_err)
+				lpass_cdc_va_macro_core_vote(va_priv, false);
+			if (ret) {
+				dev_err_ratelimited(component->dev,
+					"%s: request clock VA_CLK disable failed\n",
+					__func__);
+				if (va_priv->dev_up)
+					lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+						va_priv->default_clk_id,
+						TX_CORE_CLK,
+						false);
+				break;
+			}
+			va_priv->current_clk_id = TX_CORE_CLK;
+		}
+		break;
+	default:
+		dev_err_ratelimited(va_priv->dev,
+			"%s: invalid DAPM event %d\n", __func__, event);
+		ret = -EINVAL;
+	}
+	return ret;
+}
+
+static int lpass_cdc_va_macro_tx_swr_clk_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	struct device *va_dev = NULL;
+	struct lpass_cdc_va_macro_priv *va_priv = NULL;
+	struct snd_soc_component *component =
+				snd_soc_dapm_to_component(w->dapm);
+
+	if (!lpass_cdc_va_macro_get_data(component, &va_dev,
+					 &va_priv, __func__))
+		return -EINVAL;
+
+	if (SND_SOC_DAPM_EVENT_ON(event))
+		++va_priv->tx_swr_clk_cnt;
+	if (SND_SOC_DAPM_EVENT_OFF(event))
+		--va_priv->tx_swr_clk_cnt;
+
 	return 0;
 }
 
@@ -486,14 +655,34 @@ static int lpass_cdc_va_macro_tx_va_mclk_enable(
 						   TX_CORE_CLK,
 						   TX_CORE_CLK,
 						   true);
-		ret = lpass_cdc_va_macro_mclk_enable(va_priv, 1, true);
-		if (ret < 0) {
-			if (va_priv->swr_clk_users == 0)
-				msm_cdc_pinctrl_select_sleep_state(va_priv->va_swr_gpio_p);
+		if (clk_type == TX_MCLK) {
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+							   TX_CORE_CLK,
+							   TX_CORE_CLK,
+							   true);
+			if (ret < 0) {
+				if (va_priv->swr_clk_users == 0)
+					msm_cdc_pinctrl_select_sleep_state(
+							va_priv->va_swr_gpio_p);
+				dev_err_ratelimited(va_priv->dev,
+					"%s: swr request clk failed\n",
+					__func__);
+				goto done;
+			}
+			lpass_cdc_clk_rsc_fs_gen_request(va_priv->dev,
+						  true);
+		}
+		if (clk_type == VA_MCLK) {
+			ret = lpass_cdc_va_macro_mclk_enable(va_priv, 1, true);
+			if (ret < 0) {
+				if (va_priv->swr_clk_users == 0)
+					msm_cdc_pinctrl_select_sleep_state(
+							va_priv->va_swr_gpio_p);
 				dev_err_ratelimited(va_priv->dev,
 					"%s: request clock enable failed\n",
 					__func__);
-			goto done;
+				goto done;
+			}
 		}
 		if (va_priv->swr_clk_users == 0) {
 			dev_dbg(va_priv->dev, "%s: reset_swr: %d\n",
@@ -533,8 +722,26 @@ static int lpass_cdc_va_macro_tx_va_mclk_enable(
 			regmap_update_bits(regmap,
 				LPASS_CDC_VA_CLK_RST_CTRL_SWR_CONTROL,
 				0x01, 0x00);
-		lpass_cdc_va_macro_mclk_enable(va_priv, 0, true);
-
+		if (clk_type == VA_MCLK)
+			lpass_cdc_va_macro_mclk_enable(va_priv, 0, true);
+		if (clk_type == TX_MCLK) {
+			lpass_cdc_clk_rsc_fs_gen_request(va_priv->dev,
+						  false);
+			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
+							   TX_CORE_CLK,
+							   TX_CORE_CLK,
+							   false);
+			if (ret < 0) {
+				if (va_priv->swr_clk_users == 0) {
+					msm_cdc_pinctrl_select_sleep_state(
+							va_priv->va_swr_gpio_p);
+				}
+				dev_err_ratelimited(va_priv->dev,
+					"%s: swr request clk failed\n",
+					__func__);
+				goto done;
+			}
+		}
 		if (!clk_tx_ret)
 			ret = lpass_cdc_clk_rsc_request_clock(va_priv->dev,
 						   TX_CORE_CLK,
@@ -573,7 +780,7 @@ static int lpass_cdc_va_macro_core_vote(void *handle, bool enable)
 		return -EINVAL;
 	}
 
-	TRACE_PRINTK("%s, enter: enable %d\n", __func__, enable);
+	trace_printk("%s, enter: enable %d\n", __func__, enable);
 	if (enable) {
 		pm_runtime_get_sync(va_priv->dev);
 		if (lpass_cdc_check_core_votes(va_priv->dev)) {
@@ -585,7 +792,7 @@ static int lpass_cdc_va_macro_core_vote(void *handle, bool enable)
 		pm_runtime_put_autosuspend(va_priv->dev);
 		pm_runtime_mark_last_busy(va_priv->dev);
 	}
-	TRACE_PRINTK("%s, leave\n", __func__);
+	trace_printk("%s, leave\n", __func__);
 	return rc;
 }
 
@@ -603,26 +810,76 @@ static int lpass_cdc_va_macro_swrm_clock(void *handle, bool enable)
 
 	mutex_lock(&va_priv->swr_clk_lock);
 	dev_dbg(va_priv->dev,
-		"%s: swrm clock %s Enter..", __func__,
-			(enable ? "enable" : "disable"));
+		"%s: swrm clock %s tx_swr_clk_cnt: %d va_swr_clk_cnt: %d\n",
+		__func__, (enable ? "enable" : "disable"),
+		va_priv->tx_swr_clk_cnt, va_priv->va_swr_clk_cnt);
+
 	if (enable) {
 		pm_runtime_get_sync(va_priv->dev);
-		ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
-					regmap, VA_MCLK, enable);
-		if (ret) {
-			dev_dbg(va_priv->dev, "%s: failed to enable VA_MCLK\n",
-				__func__);
+		if (va_priv->va_swr_clk_cnt && !va_priv->tx_swr_clk_cnt) {
+			ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
+						regmap, VA_MCLK, enable);
+			if (ret) {
+				pm_runtime_mark_last_busy(va_priv->dev);
+				pm_runtime_put_autosuspend(va_priv->dev);
+				goto done;
+			}
+			va_priv->va_clk_status++;
+		} else {
+			ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
+						regmap, TX_MCLK, enable);
+			if (ret) {
+				pm_runtime_mark_last_busy(va_priv->dev);
+				pm_runtime_put_autosuspend(va_priv->dev);
+				goto done;
+			}
+			va_priv->tx_clk_status++;
 		}
 		pm_runtime_mark_last_busy(va_priv->dev);
 		pm_runtime_put_autosuspend(va_priv->dev);
 	} else {
-		ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
-					regmap,	VA_MCLK, enable);
-		if (ret) {
-			dev_dbg(va_priv->dev, "%s: failed to disable VA_MCLK\n",
-				__func__);
+		if (va_priv->va_clk_status && !va_priv->tx_clk_status) {
+			ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
+							regmap,
+							VA_MCLK, enable);
+			if (ret)
+				goto done;
+			--va_priv->va_clk_status;
+		} else if (!va_priv->va_clk_status && va_priv->tx_clk_status) {
+			ret = lpass_cdc_va_macro_tx_va_mclk_enable(va_priv,
+							regmap,
+							TX_MCLK, enable);
+			if (ret)
+				goto done;
+			--va_priv->tx_clk_status;
+		} else if (va_priv->va_clk_status && va_priv->tx_clk_status) {
+			if (!va_priv->va_swr_clk_cnt &&
+				va_priv->tx_swr_clk_cnt) {
+				ret = lpass_cdc_va_macro_tx_va_mclk_enable(
+							va_priv, regmap,
+							VA_MCLK, enable);
+				if (ret)
+					goto done;
+				--va_priv->va_clk_status;
+			} else {
+				ret = lpass_cdc_va_macro_tx_va_mclk_enable(
+							va_priv, regmap,
+							TX_MCLK, enable);
+				if (ret)
+					goto done;
+				--va_priv->tx_clk_status;
+			}
+
+		} else {
+			dev_dbg(va_priv->dev,
+				"%s: Both clocks are disabled\n", __func__);
 		}
 	}
+	dev_dbg(va_priv->dev,
+		"%s: swrm clock usr %d tx_clk_sts_cnt: %d va_clk_sts_cnt: %d\n",
+		__func__, va_priv->swr_clk_users, va_priv->tx_clk_status,
+		va_priv->va_clk_status);
+done:
 	mutex_unlock(&va_priv->swr_clk_lock);
 	return ret;
 }
@@ -936,21 +1193,11 @@ static int lpass_cdc_va_macro_tx_mixer_put(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 
 	if (enable) {
-		if (test_bit(dec_id, &va_priv->active_ch_mask[dai_id])) {
-			dev_err_ratelimited(component->dev, "%s: channel is already enabled, dec_id = %d, dai_id = %d\n",
-					__func__, dec_id, dai_id);
-		} else {
-			set_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
-			va_priv->active_ch_cnt[dai_id]++;
-		}
+		set_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
+		va_priv->active_ch_cnt[dai_id]++;
 	} else {
-		if (!test_bit(dec_id, &va_priv->active_ch_mask[dai_id])) {
-			dev_err_ratelimited(component->dev, "%s: channel is already disabled, dec_id = %d, dai_id = %d\n",
-					__func__, dec_id, dai_id);
-		} else {
-			va_priv->active_ch_cnt[dai_id]--;
-			clear_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
-		}
+		clear_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
+		va_priv->active_ch_cnt[dai_id]--;
 	}
 
 	snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol, enable, update);
@@ -1675,12 +1922,17 @@ static const struct snd_soc_dapm_widget lpass_cdc_va_macro_dapm_widgets[] = {
 			      lpass_cdc_va_macro_mclk_event,
 			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", 0, SND_SOC_NOPM, 0, 0, NULL,
-				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY_S("VA_SWR_PWR", 0, SND_SOC_NOPM, 0, 0,
+			      lpass_cdc_va_macro_swr_pwr_event,
+			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
-	SND_SOC_DAPM_SUPPLY_S("VA_SWR_CLK", -1, SND_SOC_NOPM, 0, 0, NULL,
-				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY_S("VA_TX_SWR_CLK", -1, SND_SOC_NOPM, 0, 0,
+			      lpass_cdc_va_macro_tx_swr_clk_event,
+			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
+	SND_SOC_DAPM_SUPPLY_S("VA_SWR_CLK", -1, SND_SOC_NOPM, 0, 0,
+			      lpass_cdc_va_macro_swr_clk_event,
+			      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 };
 
 static const struct snd_soc_dapm_route va_audio_map[] = {
@@ -1804,8 +2056,8 @@ static const struct snd_soc_dapm_route va_audio_map[] = {
 	{"VA SMIC MUX3", "SWR_MIC11", "VA SWR_INPUT"},
 
 	{"VA SWR_INPUT", NULL, "VA_SWR_PWR"},
-	{"VA SWR_INPUT", NULL, "VA_SWR_CLK"},
 
+	{"VA SWR_INPUT", NULL, "VA_SWR_CLK"},
 };
 
 static const char * const dec_mode_mux_text[] = {

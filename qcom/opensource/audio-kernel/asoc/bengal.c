@@ -42,7 +42,13 @@
 #include "msm-audio-defs.h"
 #include "msm_common.h"
 #include "msm_bengal_dailink.h"
+#ifdef CONFIG_SND_SOC_SIPA
+#include "codecs/sipa/sipa_aux_dev_if.h"
+#endif /*CONFIG_SND_SOC_SIPA*/
 
+#ifdef CONFIG_SND_SOC_FS1815
+#include "codecs/fs1815/fsm_public.h"
+#endif /*CONFIG_SND_SOC_FS1815*/
 #define DRV_NAME "bengal-asoc-snd"
 #define __CHIPSET__ "BENGAL "
 #define MSM_DAILINK_NAME(name) (__CHIPSET__#name)
@@ -103,9 +109,25 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = true,
 	.key_code[0] = KEY_MEDIA,
+/*import xiaomi headset patch begin */
+#if defined(CONFIG_XIAOMI_AUDIO_MBHC) && defined(CONFIG_KERNEL_CUSTOM_FACTORY)
+	.key_code[1] = KEY_VOLUMEUP,
+	.key_code[2] = KEY_VOLUMEDOWN,
+	.key_code[3] = 0,
+#elif defined(CONFIG_KERNEL_CUSTOM_FACTORY)
+	.key_code[1] = KEY_VOLUMEUP,
+	.key_code[2] = KEY_VOLUMEDOWN,
+	.key_code[3] = 0,
+#elif defined(CONFIG_XIAOMI_AUDIO_MBHC)
+	.key_code[1] = BTN_1,
+	.key_code[2] = BTN_2,
+	.key_code[3] = 0,
+#else
 	.key_code[1] = KEY_VOICECOMMAND,
 	.key_code[2] = KEY_VOLUMEUP,
 	.key_code[3] = KEY_VOLUMEDOWN,
+#endif
+/*import xiaomi headset patch end */
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,
@@ -311,8 +333,15 @@ static void *def_wcd_mbhc_cal(void)
 		(sizeof(btn_cfg->_v_btn_low[0]) * btn_cfg->num_btn);
 
 	btn_high[0] = 75;
+/*import xiaomi headset patch begin */
+#if defined(CONFIG_XIAOMI_AUDIO_MBHC)
+	btn_high[1] = 225;
+	btn_high[2] = 450;
+#else
 	btn_high[1] = 150;
 	btn_high[2] = 237;
+#endif
+/*import xiaomi headset patch end */
 	btn_high[3] = 500;
 	btn_high[4] = 500;
 	btn_high[5] = 500;
@@ -433,6 +462,16 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.ignore_suspend = 1,
 		.ops = &msm_common_be_ops,
 		SND_SOC_DAILINK_REG(usb_audio_tx),
+	},
+	{
+		.name = LPASS_BE_PCM_DUMMY_TX_0,
+		.stream_name = LPASS_BE_PCM_DUMMY_TX_0,
+		.capture_only = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		.ops = &msm_common_be_ops,
+		SND_SOC_DAILINK_REG(pcm_dummy_tx0),
 	},
 };
 
@@ -943,6 +982,13 @@ err:
 struct snd_soc_card snd_soc_card_stub_msm = {
 	.name		= "bengal-stub-snd-card",
 };
+#ifdef CONFIG_SND_SOC_AW87XXX
+extern int aw87xxx_add_codec_controls(void *codec);
+#endif /*CONFIG_SND_SOC_AWINIC_AW87XXX*/
+
+#if defined(CONFIG_SND_SOC_FS1815)
+extern void fsm_add_codec_controls(struct snd_soc_component *codec);
+#endif /*CONFIG_SND_SOC_FS1815*/
 
 static int msm_audrx_stub_init(struct snd_soc_pcm_runtime *rtd)
 {
@@ -1159,6 +1205,19 @@ static int msm_rx_tx_codec_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_new_controls(dapm, msm_int_dapm_widgets,
 		ARRAY_SIZE(msm_int_dapm_widgets));
 	pr_err("%s:: dapm new controls msm_int_dapm_widgets \n", __func__);
+
+#ifdef CONFIG_SND_SOC_AW87XXX
+	ret = aw87xxx_add_codec_controls(bolero_component);
+	if (ret < 0) {
+		pr_err("%s: aw87xxx_add_codec_controls failed, err %d\n",
+			__func__, ret);
+		return ret;
+	};
+#endif
+
+#if defined(CONFIG_SND_SOC_FS1815)
+	fsm_add_codec_controls(bolero_component);
+#endif
 
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic0");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
@@ -1450,6 +1509,11 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 			__func__, "qcom,wsa-aux-dev-prefix");
 	}
 
+	#ifdef CONFIG_SND_SOC_SIPA
+	soc_aux_init_only_sia81xx(pdev, card);
+	#endif /*CONFIG_SND_SOC_SIPA*/
+
+
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret == -EPROBE_DEFER) {
 		if (codec_reg_done)
@@ -1581,6 +1645,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 ret:
 	return 0;
 err:
+	#ifdef CONFIG_SND_SOC_SIPA
+	soc_aux_deinit_only_sia81xx(pdev, card);
+	#endif /*CONFIG_SND_SOC_SIPA*/
 	devm_kfree(&pdev->dev, pdata);
 	return ret;
 }

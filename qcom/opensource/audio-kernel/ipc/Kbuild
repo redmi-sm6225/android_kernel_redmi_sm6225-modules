@@ -14,6 +14,12 @@ ifeq ($(KERNEL_BUILD), 1)
 	AUDIO_ROOT := $(KDIR)/techpack/audio
 endif
 
+ifeq ($(TARGET_SUPPORT), sa525m)
+	include $(AUDIO_ROOT)/config/sa525mauto.conf
+	export
+	INCS    +=  -include $(AUDIO_ROOT)/config/sa525mautoconf.h
+endif
+
 ifeq ($(CONFIG_SND_SOC_AUTO), y)
 	ifdef CONFIG_SND_SOC_SA8155
 		include $(AUDIO_ROOT)/config/sa8155auto.conf
@@ -54,10 +60,6 @@ ifeq ($(KERNEL_BUILD), 0)
 	ifeq ($(CONFIG_ARCH_KALAMA), y)
 		include $(AUDIO_ROOT)/config/kalamaauto.conf
 		INCS    +=  -include $(AUDIO_ROOT)/config/kalamaautoconf.h
-	endif
-	ifeq ($(CONFIG_ARCH_CROW), y)
-		include $(AUDIO_ROOT)/config/crowauto.conf
-		INCS    +=  -include $(AUDIO_ROOT)/config/crowautoconf.h
 	endif
 	ifeq ($(CONFIG_ARCH_LITO), y)
 		include $(AUDIO_ROOT)/config/litoauto.conf
@@ -145,11 +147,7 @@ GPRV_GLINK += gpr-lite.o
 endif
 
 ifdef CONFIG_AUDIO_PKT
-ifdef CONFIG_SND_SOC_PCIE
-AUDIO_PKT += audio-pcie-pkt.o
-else
 AUDIO_PKT += audio-pkt.o
-endif
 endif
 
 LINUX_INC += -Iinclude/linux
@@ -206,3 +204,6 @@ gpr_dlkm-y := $(GPRV_GLINK)
 
 obj-$(CONFIG_AUDIO_PKT) += audio_pkt_dlkm.o
 audio_pkt_dlkm-y := $(AUDIO_PKT)
+
+# inject some build related information
+CDEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

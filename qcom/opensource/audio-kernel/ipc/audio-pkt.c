@@ -1,5 +1,5 @@
 /* Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -61,8 +61,13 @@ do {									      \
 
 #define MODULE_NAME "audio-pkt"
 #define MINOR_NUMBER_COUNT 1
+#ifdef CONFIG_AUDIO_GPR_DOMAIN_MODEM
+#define AUDPKT_DRIVER_NAME "aud_pasthru_modem"
+#define CHANNEL_NAME "modem_apps"
+#else
 #define AUDPKT_DRIVER_NAME "aud_pasthru_adsp"
 #define CHANNEL_NAME "adsp_apps"
+#endif
 #define MAX_PACKET_SIZE 4096
 
 
@@ -403,12 +408,9 @@ ssize_t audio_pkt_write(struct file *file, const char __user *buf,
 		mutex_unlock(&audpkt_dev->lock);
 		goto free_kbuf;
 	}
-
-	ret = gpr_send_pkt(ap_priv->adev, (struct gpr_pkt *) kbuf);
+	ret = gpr_send_pkt(ap_priv->adev,(struct gpr_pkt *) kbuf);
 	if (ret < 0) {
 		AUDIO_PKT_ERR("APR Send Packet Failed ret -%d\n", ret);
-		if (ret == -ECONNRESET)
-			ret = -ENETRESET;
 	}
 	mutex_unlock(&audpkt_dev->lock);
 
@@ -589,6 +591,9 @@ static int audio_pkt_plaform_driver_register_gpr(struct platform_device *pdev,
 	if (!ap_priv)
 		return -ENOMEM;
 
+	mutex_init(&ap_priv->lock);
+	ap_priv->status = AUDIO_PKT_INIT;
+
 	ret = gpr_driver_register(&audio_pkt_driver);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "%s: registering to gpr driver failed, err = %d\n",
@@ -596,8 +601,6 @@ static int audio_pkt_plaform_driver_register_gpr(struct platform_device *pdev,
 		goto err;
 	}
 
-	mutex_init(&ap_priv->lock);
-	ap_priv->status = AUDIO_PKT_INIT;
 	ap_priv->ap_dev = audpkt_dev;
 	ap_priv->dev = audpkt_dev->dev;
 err:
@@ -722,6 +725,7 @@ static int audio_pkt_platform_driver_remove(struct platform_device *adev)
 				 MINOR_NUMBER_COUNT);
 	}
 
+	//of_platform_depopulate(&adev->dev);
 	AUDIO_PKT_INFO("Audio Packet Port Driver Removed\n");
 
 	return 0;

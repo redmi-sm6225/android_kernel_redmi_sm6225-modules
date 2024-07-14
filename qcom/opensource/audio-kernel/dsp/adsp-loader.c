@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2014, 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -26,7 +26,6 @@
 #define SSR_RESET_CMD 1
 #define IMAGE_UNLOAD_CMD 0
 #define MAX_FW_IMAGES 4
-#define ADSP_LOADER_APM_TIMEOUT_MS 10000
 
 enum spf_subsys_state {
 	SPF_SUBSYS_DOWN,
@@ -138,7 +137,7 @@ static void adsp_load_fw(struct work_struct *adsp_ldr_work)
 
 load_adsp:
 	{
-		adsp_state = spf_core_is_apm_ready(ADSP_LOADER_APM_TIMEOUT_MS);
+		adsp_state = spf_core_is_apm_ready();
 		if (adsp_state == SPF_SUBSYS_DOWN) {
 			rc = rproc_boot(priv->pil_h);
 			if (rc) {
@@ -342,7 +341,7 @@ static int adsp_loader_probe(struct platform_device *pdev)
 	rproc_phandle = be32_to_cpup(prop->value);
 	adsp = rproc_get_by_phandle(rproc_phandle);
 	if (!adsp) {
-		dev_err(&pdev->dev, "fail to get rproc\n");
+		dev_err(&pdev->dev, "%s: fail to get rproc\n", __func__);
 		return -EPROBE_DEFER;
 	}
 
@@ -406,7 +405,7 @@ static int adsp_loader_probe(struct platform_device *pdev)
 		goto wqueue;
 	}
 	if (len <= 0 || len > sizeof(u32)) {
-		dev_dbg(&pdev->dev, "%s: nvmem cell length out of range: %d\n",
+		dev_dbg(&pdev->dev, "%s: nvmem cell length out of range: %ld\n",
 			__func__, len);
 		kfree(buf);
 		goto wqueue;

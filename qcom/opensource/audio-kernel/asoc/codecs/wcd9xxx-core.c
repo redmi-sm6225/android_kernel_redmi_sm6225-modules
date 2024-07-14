@@ -670,12 +670,12 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx)
 	return ret;
 err_irq:
 	wcd9xxx_irq_exit(&wcd9xxx->core_res);
-err:
-    wcd9xxx_core_res_deinit(&wcd9xxx->core_res);
 fail_cdc_fill:
 	devm_kfree(wcd9xxx->dev, wcd9xxx->codec_type);
-	wcd9xxx_bringdown(wcd9xxx->dev);
 	wcd9xxx->codec_type = NULL;
+err:
+	wcd9xxx_bringdown(wcd9xxx->dev);
+	wcd9xxx_core_res_deinit(&wcd9xxx->core_res);
 err_bring_up:
 	mutex_destroy(&wcd9xxx->io_lock);
 	mutex_destroy(&wcd9xxx->xfer_lock);
@@ -991,13 +991,13 @@ static int wcd9xxx_i2c_write_device(struct wcd9xxx *wcd9xxx, u16 reg, u8 *value,
 						wcd9xxx_i2c->xfer_msg, 1);
 		if (ret != 1) {
 			pr_err("failed to write the device\n");
-			goto fail;
+			kfree(data);
+			return ret;
 		}
 	}
 	pr_debug("write success register = %x val = %x\n", reg, data[1]);
-fail:
 	kfree(data);
-	return ret;
+	return 0;
 }
 
 

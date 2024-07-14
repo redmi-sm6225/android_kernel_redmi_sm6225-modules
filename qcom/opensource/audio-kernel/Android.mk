@@ -14,30 +14,26 @@ ifeq ($(call is-board-platform, bengal),true)
 AUDIO_SELECT  := CONFIG_SND_SOC_BENGAL=m
 endif
 
-ifeq ($(call is-board-platform, crow),true)
-AUDIO_SELECT  := CONFIG_SND_SOC_CROW=m
+#lct audio add for factory
+ifeq (true, $(strip $(call is-factory-build)))
+AUDIO_SELECT  += CONFIG_KERNEL_CUSTOM_FACTORY=y
 endif
 
 ifeq ($(ENABLE_AUDIO_LEGACY_TECHPACK),true)
 include $(call all-subdir-makefiles)
 endif
 
-BOARD_OPENSOURCE_DIR ?= vendor/qcom/opensource
-BOARD_COMMON_DIR ?= device/qcom/common
-
 # Build/Package only in case of supported target
-ifeq ($(call is-board-platform-in-list,taro kalama bengal crow), true)
-
-LOCAL_PATH := $(call my-dir)
+ifeq ($(call is-board-platform-in-list,taro kalama bengal), true)
 
 # This makefile is only for DLKM
 ifneq ($(findstring vendor,$(LOCAL_PATH)),)
 
 ifneq ($(findstring opensource,$(LOCAL_PATH)),)
-	AUDIO_BLD_DIR := $(abspath .)/$(BOARD_OPENSOURCE_DIR)/audio-kernel
+	AUDIO_BLD_DIR := $(abspath .)/vendor/qcom/opensource/audio-kernel
 endif # opensource
 
-DLKM_DIR := $(TOP)/$(BOARD_COMMON_DIR)/dlkm
+DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 
 
 ###########################################################
@@ -341,44 +337,6 @@ LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
-
-########################### WCD937x CODEC  ################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd937x_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd937x/wcd937x_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd937x_slave_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd937x/wcd937x_slave_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-
-########################### WCD939x CODEC  ################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd939x_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd939x/wcd939x_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-###########################################################
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
-LOCAL_MODULE              := wcd939x_slave_dlkm.ko
-LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wcd939x/wcd939x_slave_dlkm.ko
-LOCAL_MODULE_TAGS         := optional
-LOCAL_MODULE_DEBUG_ENABLE := true
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
 ###########################################################
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
@@ -434,6 +392,33 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
 LOCAL_MODULE              := wsa881x_analog_dlkm.ko
 LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/wsa881x_analog_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+########################### sipa CODEC  ################################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := sipa_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/sipa/sipa_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+########################### FS1815 ################################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := fs1815_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/fs1815/fs1815_dlkm.ko
+LOCAL_MODULE_TAGS         := optional
+LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+###########################AW87XXX################################
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES           := $(AUDIO_SRC_FILES)
+LOCAL_MODULE              := aw87xxx_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := asoc/codecs/aw87xxx/aw87xxx_dlkm.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)

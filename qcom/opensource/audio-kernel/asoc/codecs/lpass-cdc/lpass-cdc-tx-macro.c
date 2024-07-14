@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -330,7 +330,7 @@ static int lpass_cdc_tx_macro_event_handler(struct snd_soc_component *component,
 
 	switch (event) {
 	case LPASS_CDC_MACRO_EVT_SSR_DOWN:
-		TRACE_PRINTK("%s, enter SSR down\n", __func__);
+		trace_printk("%s, enter SSR down\n", __func__);
 		if ((!pm_runtime_enabled(tx_dev) ||
 		     !pm_runtime_suspended(tx_dev))) {
 			ret = lpass_cdc_runtime_suspend(tx_dev);
@@ -342,7 +342,7 @@ static int lpass_cdc_tx_macro_event_handler(struct snd_soc_component *component,
 		}
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_UP:
-		TRACE_PRINTK("%s, enter SSR up\n", __func__);
+		trace_printk("%s, enter SSR up\n", __func__);
 		break;
 	case LPASS_CDC_MACRO_EVT_CLK_RESET:
 		lpass_cdc_rsc_clk_reset(tx_dev, TX_CORE_CLK);
@@ -612,21 +612,11 @@ static int lpass_cdc_tx_macro_tx_mixer_put(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 
 	if (enable) {
-		if (test_bit(dec_id, &tx_priv->active_ch_mask[dai_id])) {
-			dev_err(component->dev, "%s: channel is already enabled, dec_id = %d, dai_id = %d\n",
-					__func__, dec_id, dai_id);
-		} else {
-			set_bit(dec_id, &tx_priv->active_ch_mask[dai_id]);
-			tx_priv->active_ch_cnt[dai_id]++;
-		}
+		set_bit(dec_id, &tx_priv->active_ch_mask[dai_id]);
+		tx_priv->active_ch_cnt[dai_id]++;
 	} else {
-		if (!test_bit(dec_id, &tx_priv->active_ch_mask[dai_id])) {
-			dev_err(component->dev, "%s: channel is already disabled, dec_id = %d, dai_id = %d\n",
-					__func__, dec_id, dai_id);
-		} else {
-			tx_priv->active_ch_cnt[dai_id]--;
-			clear_bit(dec_id, &tx_priv->active_ch_mask[dai_id]);
-		}
+		tx_priv->active_ch_cnt[dai_id]--;
+		clear_bit(dec_id, &tx_priv->active_ch_mask[dai_id]);
 	}
 	snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol, enable, update);
 

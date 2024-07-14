@@ -40,14 +40,6 @@ ifeq ($(KERNEL_BUILD), 0)
 		include $(AUDIO_ROOT)/config/waipioauto.conf
 		INCS    +=  -include $(AUDIO_ROOT)/config/waipioautoconf.h
 	endif
-	ifeq ($(CONFIG_ARCH_KALAMA), y)
-		include $(AUDIO_ROOT)/config/kalamaauto.conf
-		INCS    +=  -include $(AUDIO_ROOT)/config/kalamaautoconf.h
-	endif
-	ifeq ($(CONFIG_ARCH_CROW), y)
-		include $(AUDIO_ROOT)/config/crowauto.conf
-		INCS    +=  -include $(AUDIO_ROOT)/config/crowautoconf.h
-	endif
 endif
 
 # As per target team, build is done as follows:
@@ -128,3 +120,6 @@ wcd937x_dlkm-y := $(WCD937X_OBJS)
 
 obj-$(CONFIG_SND_SOC_WCD937X_SLAVE) += wcd937x_slave_dlkm.o
 wcd937x_slave_dlkm-y := $(WCD937X_SLAVE_OBJS)
+
+# inject some build related information
+DEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

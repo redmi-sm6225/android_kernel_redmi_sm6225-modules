@@ -322,7 +322,7 @@ static int va_macro_event_handler(struct snd_soc_component *component,
 		va_macro_core_vote(va_priv, false);
 		break;
 	case BOLERO_MACRO_EVT_SSR_UP:
-		TRACE_PRINTK("%s, enter SSR up\n", __func__);
+		trace_printk("%s, enter SSR up\n", __func__);
 		/* reset swr after ssr/pdr */
 		va_priv->reset_swr = true;
 		if (va_priv->swr_ctrl_data)
@@ -1338,6 +1338,10 @@ static int va_macro_enable_dec(struct snd_soc_dapm_widget *w,
 		/* Disable TX CLK */
 		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
 					0x20, 0x00);
+		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
+                        0x40, 0x40);
+		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
+                        0x40, 0x00);
 		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
 					0x10, 0x00);
 		break;

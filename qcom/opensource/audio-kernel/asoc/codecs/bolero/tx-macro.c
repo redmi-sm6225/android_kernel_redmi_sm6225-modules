@@ -418,7 +418,7 @@ static int tx_macro_event_handler(struct snd_soc_component *component,
 
 	switch (event) {
 	case BOLERO_MACRO_EVT_SSR_DOWN:
-		TRACE_PRINTK("%s, enter SSR down\n", __func__);
+		trace_printk("%s, enter SSR down\n", __func__);
 		if (tx_priv->swr_ctrl_data) {
 			swrm_wcd_notify(
 				tx_priv->swr_ctrl_data[0].tx_swr_pdev,
@@ -435,7 +435,7 @@ static int tx_macro_event_handler(struct snd_soc_component *component,
 		}
 		break;
 	case BOLERO_MACRO_EVT_SSR_UP:
-		TRACE_PRINTK("%s, enter SSR up\n", __func__);
+		trace_printk("%s, enter SSR up\n", __func__);
 		/* reset swr after ssr/pdr */
 		tx_priv->reset_swr = true;
 		if (tx_priv->swr_ctrl_data)
@@ -1219,6 +1219,10 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 						0x20, 0x00);
 		snd_soc_component_update_bits(component,
 			dec_cfg_reg, 0x06, 0x00);
+		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
+			0x40, 0x40);
+		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
+                        0x40, 0x00);
 		snd_soc_component_update_bits(component, tx_vol_ctl_reg,
 						0x10, 0x00);
 		if (tx_priv->bcs_enable) {
@@ -2665,7 +2669,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 {
 	int ret = 0, clk_tx_ret = 0;
 
-	TRACE_PRINTK("%s: clock type %s, enable: %s tx_mclk_users: %d\n",
+	trace_printk("%s: clock type %s, enable: %s tx_mclk_users: %d\n",
 		__func__, (clk_type ? "VA_MCLK" : "TX_MCLK"),
 		(enable ? "enable" : "disable"), tx_priv->tx_mclk_users);
 	dev_dbg(tx_priv->dev,
@@ -2675,7 +2679,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 
 	if (enable) {
 		if (tx_priv->swr_clk_users == 0) {
-			TRACE_PRINTK("%s: tx swr clk users 0\n", __func__);
+			trace_printk("%s: tx swr clk users 0\n", __func__);
 			ret = msm_cdc_pinctrl_select_active_state(
 						tx_priv->tx_swr_gpio_p);
 			if (ret < 0) {
@@ -2693,7 +2697,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 						   TX_CORE_CLK,
 						   true);
 		if (clk_type == TX_MCLK) {
-			TRACE_PRINTK("%s: requesting TX_MCLK\n", __func__);
+			trace_printk("%s: requesting TX_MCLK\n", __func__);
 			ret = tx_macro_mclk_enable(tx_priv, 1);
 			if (ret < 0) {
 				if (tx_priv->swr_clk_users == 0)
@@ -2706,7 +2710,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 			}
 		}
 		if (clk_type == VA_MCLK) {
-			TRACE_PRINTK("%s: requesting VA_MCLK\n", __func__);
+			trace_printk("%s: requesting VA_MCLK\n", __func__);
 			ret = bolero_clk_rsc_request_clock(tx_priv->dev,
 							   TX_CORE_CLK,
 							   VA_CORE_CLK,
@@ -2740,7 +2744,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 		if (tx_priv->swr_clk_users == 0) {
 			dev_dbg(tx_priv->dev, "%s: reset_swr: %d\n",
 				__func__, tx_priv->reset_swr);
-			TRACE_PRINTK("%s: reset_swr: %d\n",
+			trace_printk("%s: reset_swr: %d\n",
 				__func__, tx_priv->reset_swr);
 			if (tx_priv->reset_swr)
 				regmap_update_bits(regmap,
@@ -2839,7 +2843,7 @@ done:
 				TX_CORE_CLK,
 				false);
 exit:
-	TRACE_PRINTK("%s: exit\n", __func__);
+	trace_printk("%s: exit\n", __func__);
 	return ret;
 }
 
@@ -2953,7 +2957,7 @@ static int tx_macro_swrm_clock(void *handle, bool enable)
 	}
 
 	mutex_lock(&tx_priv->swr_clk_lock);
-	TRACE_PRINTK("%s: swrm clock %s tx_swr_clk_cnt: %d va_swr_clk_cnt: %d\n",
+	trace_printk("%s: swrm clock %s tx_swr_clk_cnt: %d va_swr_clk_cnt: %d\n",
 		__func__,
 		(enable ? "enable" : "disable"),
 		tx_priv->tx_swr_clk_cnt, tx_priv->va_swr_clk_cnt);
@@ -3019,7 +3023,7 @@ static int tx_macro_swrm_clock(void *handle, bool enable)
 		}
 	}
 
-	TRACE_PRINTK("%s: swrm clock users %d tx_clk_sts_cnt: %d va_clk_sts_cnt: %d\n",
+	trace_printk("%s: swrm clock users %d tx_clk_sts_cnt: %d va_clk_sts_cnt: %d\n",
 		__func__, tx_priv->swr_clk_users, tx_priv->tx_clk_status,
                 tx_priv->va_clk_status);
 	dev_dbg(tx_priv->dev,
