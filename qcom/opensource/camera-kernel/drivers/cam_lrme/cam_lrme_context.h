@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_LRME_CONTEXT_H_
@@ -27,7 +27,7 @@ struct cam_lrme_context {
 
 int cam_lrme_context_init(struct cam_lrme_context *lrme_ctx,
 	struct cam_context *base_ctx, struct cam_hw_mgr_intf *hw_intf,
-	uint32_t index, int img_iommu_hdl);
+	uint32_t index);
 int cam_lrme_context_deinit(struct cam_lrme_context *lrme_ctx);
 
 #endif /* _CAM_LRME_CONTEXT_H_ */

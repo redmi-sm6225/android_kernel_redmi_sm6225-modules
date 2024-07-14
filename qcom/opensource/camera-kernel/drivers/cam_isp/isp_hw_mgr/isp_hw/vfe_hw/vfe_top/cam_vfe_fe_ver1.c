@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -36,8 +36,6 @@ struct cam_vfe_mux_fe_data {
 	uint32_t                           first_line;
 	uint32_t                           last_pixel;
 	uint32_t                           last_line;
-	uint32_t                           hbi_value;
-	uint32_t                           vbi_value;
 	bool                               enable_sof_irq_debug;
 	uint32_t                           irq_debug_cnt;
 	uint32_t                           fe_cfg_data;
@@ -181,8 +179,6 @@ int cam_vfe_fe_ver1_acquire_resource(
 	fe_data->last_pixel  = acquire_data->vfe_in.in_port->left_stop;
 	fe_data->first_line  = acquire_data->vfe_in.in_port->line_start;
 	fe_data->last_line   = acquire_data->vfe_in.in_port->line_stop;
-	fe_data->hbi_value   = 0;
-	fe_data->vbi_value   = 0;
 
 	CAM_DBG(CAM_ISP, "hw id:%d pix_pattern:%d dsp_mode=%d",
 		fe_res->hw_intf->hw_idx,
@@ -306,19 +302,16 @@ static int cam_vfe_fe_resource_start(
 		CAM_VFE_TOP_VER2_MODULE_STATS]->cgc_ovd);
 
 	/* epoch config */
-	epoch0_irq_mask = (((rsrc_data->last_line + rsrc_data->vbi_value) -
-		rsrc_data->first_line) / 2);
-	if (epoch0_irq_mask > (rsrc_data->last_line - rsrc_data->first_line))
-		epoch0_irq_mask = rsrc_data->last_line - rsrc_data->first_line;
+	epoch0_irq_mask = ((rsrc_data->last_line - rsrc_data->first_line) / 2) +
+		rsrc_data->first_line;
 
 	epoch1_irq_mask = rsrc_data->reg_data->epoch_line_cfg & 0xFFFF;
 	computed_epoch_line_cfg = (epoch0_irq_mask << 16) | epoch1_irq_mask;
 	cam_io_w_mb(computed_epoch_line_cfg,
 		rsrc_data->mem_base + rsrc_data->fe_reg->epoch_irq);
-	CAM_DBG(CAM_ISP,
-		"first_line:0x%x last_line:0x%x vbi:0x%x epoch_line_cfg: 0x%x",
+	CAM_DBG(CAM_ISP, "first_line:0x%x last_line:0x%x epoch_line_cfg: 0x%x",
 		rsrc_data->first_line, rsrc_data->last_line,
-		rsrc_data->vbi_value, computed_epoch_line_cfg);
+		computed_epoch_line_cfg);
 
 	fe_res->res_state = CAM_ISP_RESOURCE_STATE_STREAMING;
 
@@ -453,23 +446,6 @@ static int cam_vfe_fe_sof_irq_debug(
 	return 0;
 }
 
-static int cam_vfe_fe_blanking_update(
-	struct cam_isp_resource_node *rsrc_node, void *cmd_args)
-{
-	struct cam_vfe_mux_fe_data *fe_priv =
-		(struct cam_vfe_mux_fe_data *)rsrc_node->res_priv;
-
-	struct cam_isp_blanking_config  *blanking_config =
-		(struct cam_isp_blanking_config *)cmd_args;
-
-	fe_priv->hbi_value = blanking_config->hbi;
-	fe_priv->vbi_value = blanking_config->vbi;
-	CAM_DBG(CAM_ISP, "hbi:%d vbi:%d",
-		fe_priv->hbi_value, fe_priv->vbi_value);
-
-	return 0;
-}
-
 static int cam_vfe_fe_process_cmd(struct cam_isp_resource_node *rsrc_node,
 	uint32_t cmd_type, void *cmd_args, uint32_t arg_size)
 {
@@ -490,9 +466,6 @@ static int cam_vfe_fe_process_cmd(struct cam_isp_resource_node *rsrc_node,
 		break;
 	case CAM_ISP_HW_CMD_FE_UPDATE_IN_RD:
 		rc = cam_vfe_fe_update(rsrc_node, cmd_args, arg_size);
-		break;
-	case CAM_ISP_HW_CMD_BLANKING_UPDATE:
-		rc = cam_vfe_fe_blanking_update(rsrc_node, cmd_args);
 		break;
 	default:
 		CAM_ERR(CAM_ISP,
@@ -516,6 +489,7 @@ static int cam_vfe_fe_handle_irq_bottom_half(void *handler_priv,
 	struct cam_isp_resource_node         *fe_node;
 	struct cam_vfe_mux_fe_data           *fe_priv;
 	struct cam_vfe_top_irq_evt_payload   *payload;
+	struct cam_isp_hw_event_info          evt_info;
 	uint32_t                              irq_status0;
 	uint32_t                              irq_status1;
 
@@ -529,6 +503,10 @@ static int cam_vfe_fe_handle_irq_bottom_half(void *handler_priv,
 	payload = evt_payload_priv;
 	irq_status0 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS0];
 	irq_status1 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS1];
+
+	evt_info.hw_idx = fe_node->hw_intf->hw_idx;
+	evt_info.res_id = fe_node->res_id;
+	evt_info.res_type = fe_node->res_type;
 
 	CAM_DBG(CAM_ISP, "event ID, irq_status_0 = 0x%x", irq_status0);
 
@@ -569,8 +547,8 @@ static int cam_vfe_fe_handle_irq_bottom_half(void *handler_priv,
 	if (irq_status1 & fe_priv->reg_data->error_irq_mask1) {
 		CAM_DBG(CAM_ISP, "Received ERROR");
 		ret = CAM_ISP_HW_ERROR_OVERFLOW;
+		evt_info.err_type = CAM_VFE_IRQ_STATUS_OVERFLOW;
 		cam_vfe_fe_reg_dump(fe_node);
-		/* No HW mgr notification on error */
 	} else {
 		ret = CAM_ISP_HW_ERROR_NONE;
 	}

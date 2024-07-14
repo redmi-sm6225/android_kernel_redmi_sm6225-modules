@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_cdm.h"
@@ -179,7 +178,6 @@ static struct cam_cdm_common_regs cdm_hw_2_1_cmn_reg_offset = {
 	.core_cfg = 0x18,
 	.core_en = 0x1c,
 	.fe_cfg = 0x20,
-	.cdm_status = 0x0,
 	.irq_context_status = 0x2c,
 	.bl_fifo_rb = 0x60,
 	.bl_fifo_base_rb = 0x64,
@@ -199,35 +197,34 @@ static struct cam_cdm_common_regs cdm_hw_2_1_cmn_reg_offset = {
 	.bus_misr_cfg1 = 0x104,
 	.bus_misr_rd_val = 0x108,
 	.pending_req = {
-			&cdm_hw_2_1_bl_pending_req0,
-			&cdm_hw_2_1_bl_pending_req1,
-		},
+		&cdm_hw_2_1_bl_pending_req0,
+		&cdm_hw_2_1_bl_pending_req1,
+	},
 	.comp_wait = {
-			&cdm_2_1_comp_wait_status0,
-			&cdm_2_1_comp_wait_status1,
-		},
+		&cdm_2_1_comp_wait_status0,
+		&cdm_2_1_comp_wait_status1,
+	},
 	.perf_mon = {
-			&cdm_2_1_perf_mon0,
-			&cdm_2_1_perf_mon1,
-		},
+		&cdm_2_1_perf_mon0,
+		&cdm_2_1_perf_mon1,
+	},
 	.scratch = {
-			&cdm_2_1_scratch_reg0,
-			&cdm_2_1_scratch_reg1,
-			&cdm_2_1_scratch_reg2,
-			&cdm_2_1_scratch_reg3,
-			&cdm_2_1_scratch_reg4,
-			&cdm_2_1_scratch_reg5,
-			&cdm_2_1_scratch_reg6,
-			&cdm_2_1_scratch_reg7,
-			&cdm_2_1_scratch_reg8,
-			&cdm_2_1_scratch_reg9,
-			&cdm_2_1_scratch_reg10,
-			&cdm_2_1_scratch_reg11,
-		},
+		&cdm_2_1_scratch_reg0,
+		&cdm_2_1_scratch_reg1,
+		&cdm_2_1_scratch_reg2,
+		&cdm_2_1_scratch_reg3,
+		&cdm_2_1_scratch_reg4,
+		&cdm_2_1_scratch_reg5,
+		&cdm_2_1_scratch_reg6,
+		&cdm_2_1_scratch_reg7,
+		&cdm_2_1_scratch_reg8,
+		&cdm_2_1_scratch_reg9,
+		&cdm_2_1_scratch_reg10,
+		&cdm_2_1_scratch_reg11,
+	},
 	.perf_reg = NULL,
 	.icl_reg = &cdm_2_1_icl,
 	.spare = 0x3fc,
-	.priority_group_bit_offset = 20,
 };
 
 static struct cam_cdm_common_reg_data cdm_hw_2_1_cmn_reg_data = {
@@ -240,16 +237,17 @@ static struct cam_cdm_common_reg_data cdm_hw_2_1_cmn_reg_data = {
 struct cam_cdm_hw_reg_offset cam_cdm_2_1_reg_offset = {
 	.cmn_reg = &cdm_hw_2_1_cmn_reg_offset,
 	.bl_fifo_reg = {
-			&cdm_hw_2_1_bl_fifo0,
-			&cdm_hw_2_1_bl_fifo1,
-			&cdm_hw_2_1_bl_fifo2,
-			&cdm_hw_2_1_bl_fifo3,
-		},
+		&cdm_hw_2_1_bl_fifo0,
+		&cdm_hw_2_1_bl_fifo1,
+		&cdm_hw_2_1_bl_fifo2,
+		&cdm_hw_2_1_bl_fifo3,
+	},
 	.irq_reg = {
-			&cdm_hw_2_1_irq0,
-			&cdm_hw_2_1_irq1,
-			&cdm_hw_2_1_irq2,
-			&cdm_hw_2_1_irq3,
-		},
+		&cdm_hw_2_1_irq0,
+		&cdm_hw_2_1_irq1,
+		&cdm_hw_2_1_irq2,
+		&cdm_hw_2_1_irq3,
+	},
 	.reg_data = &cdm_hw_2_1_cmn_reg_data,
 };
+

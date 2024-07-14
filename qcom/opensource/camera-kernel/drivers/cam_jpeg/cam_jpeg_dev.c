@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -16,73 +15,28 @@
 #include "cam_jpeg_dev.h"
 #include "cam_debug_util.h"
 #include "cam_smmu_api.h"
-#include "camera_main.h"
-#include "cam_common_util.h"
-#include "cam_context_utils.h"
 
 #define CAM_JPEG_DEV_NAME "cam-jpeg"
 
 static struct cam_jpeg_dev g_jpeg_dev;
 
-static int cam_jpeg_dev_err_inject_cb(void *err_param)
-{
-	int i  = 0;
-
-	for (i = 0; i < CAM_JPEG_CTX_MAX; i++) {
-		if (g_jpeg_dev.ctx[i].dev_hdl ==
-			((struct cam_err_inject_param *)err_param)->dev_hdl) {
-			CAM_INFO(CAM_ISP, "dev_hdl found:%d", g_jpeg_dev.ctx[i].dev_hdl);
-			cam_context_add_err_inject(&g_jpeg_dev.ctx[i], err_param);
-			return 0;
-		}
-	}
-	CAM_ERR(CAM_ISP, "no dev hdl found jpeg");
-	return -EINVAL;
-}
-
 static void cam_jpeg_dev_iommu_fault_handler(
-	struct cam_smmu_pf_info *pf_smmu_info)
+	struct iommu_domain *domain, struct device *dev, unsigned long iova,
+	int flags, void *token, uint32_t buf_info)
 {
-	int i, rc;
+	int i = 0;
 	struct cam_node *node = NULL;
-	struct cam_hw_dump_pf_args pf_args = {0};
 
-	if (!pf_smmu_info || !pf_smmu_info->token) {
+	if (!token) {
 		CAM_ERR(CAM_JPEG, "invalid token in page handler cb");
 		return;
 	}
 
-	node = (struct cam_node *)pf_smmu_info->token;
+	node = (struct cam_node *)token;
 
-	pf_args.pf_smmu_info = pf_smmu_info;
-
-	for (i = 0; i < node->ctx_size; i++) {
-		cam_context_dump_pf_info(&(node->ctx_list[i]), &pf_args);
-		if (pf_args.pf_context_info.ctx_found)
-			/* found ctx and packet of the faulted address */
-			break;
-	}
-
-	if (i == node->ctx_size) {
-		/* Faulted ctx not found. But report PF to UMD anyway*/
-		rc = cam_context_send_pf_evt(NULL, &pf_args);
-		if (rc)
-			CAM_ERR(CAM_JPEG,
-				"Failed to notify PF event to userspace rc: %d", rc);
-	}
-}
-
-static void cam_jpeg_dev_mini_dump_cb(void *priv, void *args)
-{
-	struct cam_context *ctx = NULL;
-
-	if (!priv || !args) {
-		CAM_ERR(CAM_JPEG, "Invalid param priv %pK %pK args", priv, args);
-		return;
-	}
-
-	ctx = (struct cam_context *)priv;
-	cam_context_mini_dump_from_hw(ctx, args);
+	for (i = 0; i < node->ctx_size; i++)
+		cam_context_dump_pf_info(&(node->ctx_list[i]), iova,
+			buf_info);
 }
 
 static const struct of_device_id cam_jpeg_dt_match[] = {
@@ -105,11 +59,12 @@ static int cam_jpeg_subdev_open(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int cam_jpeg_subdev_close_internal(struct v4l2_subdev *sd,
+static int cam_jpeg_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	int rc = 0;
 	struct cam_node *node = v4l2_get_subdevdata(sd);
+
 
 	mutex_lock(&g_jpeg_dev.jpeg_mutex);
 	if (g_jpeg_dev.open_cnt <= 0) {
@@ -134,35 +89,39 @@ end:
 	return rc;
 }
 
-static int cam_jpeg_subdev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_JPEG, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-	return cam_jpeg_subdev_close_internal(sd, fh);
-}
-
 static const struct v4l2_subdev_internal_ops cam_jpeg_subdev_internal_ops = {
 	.close = cam_jpeg_subdev_close,
 	.open = cam_jpeg_subdev_open,
 };
 
-static int cam_jpeg_dev_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_jpeg_dev_remove(struct platform_device *pdev)
+{
+	int rc;
+	int i;
+
+	for (i = 0; i < CAM_JPEG_CTX_MAX; i++) {
+		rc = cam_jpeg_context_deinit(&g_jpeg_dev.ctx_jpeg[i]);
+		if (rc)
+			CAM_ERR(CAM_JPEG, "JPEG context %d deinit failed %d",
+				i, rc);
+	}
+
+	rc = cam_subdev_remove(&g_jpeg_dev.sd);
+	if (rc)
+		CAM_ERR(CAM_JPEG, "Unregister failed %d", rc);
+
+	return rc;
+}
+
+static int cam_jpeg_dev_probe(struct platform_device *pdev)
 {
 	int rc;
 	int i;
 	struct cam_hw_mgr_intf hw_mgr_intf;
 	struct cam_node *node;
 	int iommu_hdl = -1;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	g_jpeg_dev.sd.internal_ops = &cam_jpeg_subdev_internal_ops;
-	g_jpeg_dev.sd.close_seq_prior = CAM_SD_CLOSE_MEDIUM_PRIORITY;
 	rc = cam_subdev_probe(&g_jpeg_dev.sd, pdev, CAM_JPEG_DEV_NAME,
 		CAM_JPEG_DEVICE_TYPE);
 	if (rc) {
@@ -172,8 +131,7 @@ static int cam_jpeg_dev_component_bind(struct device *dev,
 	node = (struct cam_node *)g_jpeg_dev.sd.token;
 
 	rc = cam_jpeg_hw_mgr_init(pdev->dev.of_node,
-		(uint64_t *)&hw_mgr_intf, &iommu_hdl,
-		cam_jpeg_dev_mini_dump_cb);
+		(uint64_t *)&hw_mgr_intf, &iommu_hdl);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "Can not initialize JPEG HWmanager %d", rc);
 		goto unregister;
@@ -183,16 +141,13 @@ static int cam_jpeg_dev_component_bind(struct device *dev,
 		rc = cam_jpeg_context_init(&g_jpeg_dev.ctx_jpeg[i],
 			&g_jpeg_dev.ctx[i],
 			&node->hw_mgr_intf,
-			i, iommu_hdl);
+			i);
 		if (rc) {
 			CAM_ERR(CAM_JPEG, "JPEG context init failed %d %d",
 				i, rc);
 			goto ctx_init_fail;
 		}
 	}
-
-	cam_common_register_err_inject_cb(cam_jpeg_dev_err_inject_cb,
-		CAM_COMMON_ERR_INJECT_HW_JPEG);
 
 	rc = cam_node_init(node, &hw_mgr_intf, g_jpeg_dev.ctx, CAM_JPEG_CTX_MAX,
 		CAM_JPEG_DEV_NAME);
@@ -201,13 +156,12 @@ static int cam_jpeg_dev_component_bind(struct device *dev,
 		goto ctx_init_fail;
 	}
 
-	node->sd_handler = cam_jpeg_subdev_close_internal;
 	cam_smmu_set_client_page_fault_handler(iommu_hdl,
 		cam_jpeg_dev_iommu_fault_handler, node);
 
 	mutex_init(&g_jpeg_dev.jpeg_mutex);
 
-	CAM_DBG(CAM_JPEG, "Component bound successfully");
+	CAM_INFO(CAM_JPEG, "Camera JPEG probe complete");
 
 	return rc;
 
@@ -222,49 +176,7 @@ err:
 	return rc;
 }
 
-static void cam_jpeg_dev_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
-{
-	int rc;
-	int i;
-
-	for (i = 0; i < CAM_CTX_MAX; i++) {
-		rc = cam_jpeg_context_deinit(&g_jpeg_dev.ctx_jpeg[i]);
-		if (rc)
-			CAM_ERR(CAM_JPEG, "JPEG context %d deinit failed %d",
-				i, rc);
-	}
-
-	rc = cam_subdev_remove(&g_jpeg_dev.sd);
-	if (rc)
-		CAM_ERR(CAM_JPEG, "Unregister failed %d", rc);
-}
-
-const static struct component_ops cam_jpeg_dev_component_ops = {
-	.bind = cam_jpeg_dev_component_bind,
-	.unbind = cam_jpeg_dev_component_unbind,
-};
-
-static int cam_jpeg_dev_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_jpeg_dev_component_ops);
-	return 0;
-}
-
-static int cam_jpeg_dev_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_JPEG, "Adding JPEG component");
-	rc = component_add(&pdev->dev, &cam_jpeg_dev_component_ops);
-	if (rc)
-		CAM_ERR(CAM_JPEG, "failed to add component rc: %d", rc);
-
-	return rc;
-
-}
-
-struct platform_driver jpeg_driver = {
+static struct platform_driver jpeg_driver = {
 	.probe = cam_jpeg_dev_probe,
 	.remove = cam_jpeg_dev_remove,
 	.driver = {

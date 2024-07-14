@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "cam_fd_hw_core.h"
 #include "cam_fd_hw_soc.h"
 #include "cam_trace.h"
-#include "cam_common_util.h"
 
 #define CAM_FD_REG_VAL_PAIR_SIZE 256
 
@@ -24,13 +22,8 @@ static uint32_t cam_fd_cdm_write_reg_val_pair(uint32_t *buffer,
 }
 
 static void cam_fd_hw_util_cdm_callback(uint32_t handle, void *userdata,
-	enum cam_cdm_cb_status status, void *cookie_arg)
+	enum cam_cdm_cb_status status, uint64_t cookie)
 {
-	uint64_t cookie = 0;
-
-	if (status != CAM_CDM_CB_STATUS_PAGEFAULT)
-		cookie = *(uint64_t *) cookie_arg;
-
 	trace_cam_cdm_cb("FD", status);
 	CAM_DBG(CAM_FD, "CDM hdl=%x, udata=%pK, status=%d, cookie=%llu",
 		handle, userdata, status, cookie);
@@ -124,9 +117,8 @@ static int cam_fd_hw_util_fdwrapper_sync_reset(struct cam_hw_info *fd_hw)
 	cam_fd_soc_register_write(soc_info, CAM_FD_REG_WRAPPER,
 		hw_static_info->wrapper_regs.sw_reset, 0x1);
 
-	time_left = cam_common_wait_for_completion_timeout(
-			&fd_core->reset_complete,
-			msecs_to_jiffies(CAM_FD_HW_HALT_RESET_TIMEOUT));
+	time_left = wait_for_completion_timeout(&fd_core->reset_complete,
+		msecs_to_jiffies(CAM_FD_HW_HALT_RESET_TIMEOUT));
 	if (time_left <= 0)
 		CAM_WARN(CAM_FD, "HW reset timeout time_left=%ld", time_left);
 
@@ -155,9 +147,8 @@ static int cam_fd_hw_util_fdwrapper_halt(struct cam_hw_info *fd_hw)
 	cam_fd_soc_register_write(soc_info, CAM_FD_REG_WRAPPER,
 		hw_static_info->wrapper_regs.hw_stop, 0x1);
 
-	time_left = cam_common_wait_for_completion_timeout(
-			&fd_core->halt_complete,
-			msecs_to_jiffies(CAM_FD_HW_HALT_RESET_TIMEOUT));
+	time_left = wait_for_completion_timeout(&fd_core->halt_complete,
+		msecs_to_jiffies(CAM_FD_HW_HALT_RESET_TIMEOUT));
 	if (time_left <= 0)
 		CAM_WARN(CAM_FD, "HW halt timeout time_left=%ld", time_left);
 
@@ -179,7 +170,6 @@ static int cam_fd_hw_util_processcmd_prestart(struct cam_hw_info *fd_hw,
 	uint32_t *cmd_buf_addr = prestart_args->cmd_buf_addr;
 	uint32_t reg_val_pair[CAM_FD_REG_VAL_PAIR_SIZE];
 	uint32_t num_cmds = 0;
-	uint32_t num_regval_pairs = 0;
 	int i;
 	struct cam_fd_hw_io_buffer *io_buf;
 	struct cam_fd_hw_req_private *req_private;
@@ -371,25 +361,19 @@ static int cam_fd_hw_util_processcmd_prestart(struct cam_hw_info *fd_hw,
 	ctx_hw_private->cdm_ops->cdm_write_changebase(cmd_buf_addr, mem_base);
 	cmd_buf_addr += size;
 	available_size -= (size * 4);
-	num_regval_pairs = num_cmds / 2;
 
-	if (num_regval_pairs) {
-		size = ctx_hw_private->cdm_ops->cdm_required_size_reg_random(
-			num_regval_pairs);
-		/* cdm util returns dwords, need to convert to bytes */
-		if ((size * 4) > available_size) {
-			CAM_ERR(CAM_FD,
-				"Insufficient size:%d , expected size:%d",
-				available_size, size);
-			return -ENOMEM;
-		}
-		ctx_hw_private->cdm_ops->cdm_write_regrandom(cmd_buf_addr,
-			num_regval_pairs, reg_val_pair);
-		cmd_buf_addr += size;
-		available_size -= (size * 4);
-	} else {
-		CAM_DBG(CAM_FD, "No reg val pairs");
+	size = ctx_hw_private->cdm_ops->cdm_required_size_reg_random(
+		num_cmds/2);
+	/* cdm util returns dwords, need to convert to bytes */
+	if ((size * 4) > available_size) {
+		CAM_ERR(CAM_FD, "Insufficient size:%d , expected size:%d",
+			available_size, size);
+		return -ENOMEM;
 	}
+	ctx_hw_private->cdm_ops->cdm_write_regrandom(cmd_buf_addr, num_cmds/2,
+		reg_val_pair);
+	cmd_buf_addr += size;
+	available_size -= (size * 4);
 
 	/* Update pre_config_buf_size in bytes */
 	prestart_args->pre_config_buf_size =
@@ -398,27 +382,19 @@ static int cam_fd_hw_util_processcmd_prestart(struct cam_hw_info *fd_hw,
 	/* Insert start trigger command into CDM as post config commands. */
 	num_cmds = cam_fd_cdm_write_reg_val_pair(reg_val_pair, 0,
 		hw_static_info->core_regs.control, 0x2);
-
-	num_regval_pairs = num_cmds / 2;
-
-	if (num_regval_pairs) {
-		size = ctx_hw_private->cdm_ops->cdm_required_size_reg_random(
-			num_regval_pairs);
-		if ((size * 4) > available_size) {
-			CAM_ERR(CAM_FD,
-				"Insufficient size:%d , expected size:%d",
-				available_size, size);
-			return -ENOMEM;
-		}
-		ctx_hw_private->cdm_ops->cdm_write_regrandom(cmd_buf_addr,
-			num_regval_pairs, reg_val_pair);
-		cmd_buf_addr += size;
-		available_size -= (size * 4);
-		prestart_args->post_config_buf_size = size * 4;
-	} else {
-		CAM_DBG(CAM_FD, "No reg val pairs");
-		prestart_args->post_config_buf_size = 0;
+	size = ctx_hw_private->cdm_ops->cdm_required_size_reg_random(
+		num_cmds/2);
+	if ((size * 4) > available_size) {
+		CAM_ERR(CAM_FD, "Insufficient size:%d , expected size:%d",
+			available_size, size);
+		return -ENOMEM;
 	}
+	ctx_hw_private->cdm_ops->cdm_write_regrandom(cmd_buf_addr, num_cmds/2,
+		reg_val_pair);
+	cmd_buf_addr += size;
+	available_size -= (size * 4);
+
+	prestart_args->post_config_buf_size = size * 4;
 
 	CAM_DBG(CAM_FD, "PreConfig [%pK %d], PostConfig[%pK %d]",
 		prestart_args->cmd_buf_addr, prestart_args->pre_config_buf_size,
@@ -777,7 +753,6 @@ int cam_fd_hw_init(void *hw_priv, void *init_hw_args, uint32_t arg_size)
 			CAM_ERR(CAM_FD, "Reset Failed, rc=%d", rc);
 			goto disable_soc;
 		}
-		init_args->is_hw_reset = true;
 	}
 
 	cam_fd_hw_util_enable_power_on_settings(fd_hw);

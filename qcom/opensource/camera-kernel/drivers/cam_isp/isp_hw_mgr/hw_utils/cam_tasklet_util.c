@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -12,16 +11,8 @@
 #include "cam_tasklet_util.h"
 #include "cam_irq_controller.h"
 #include "cam_debug_util.h"
-#include "cam_common_util.h"
 
-
-/* Threshold for scheduling delay in ms */
-#define CAM_TASKLET_SCHED_TIME_THRESHOLD        5
-
-/* Threshold for execution delay in ms */
-#define CAM_TASKLET_EXE_TIME_THRESHOLD          10
-
-#define CAM_TASKLETQ_SIZE                          256
+#define CAM_TASKLETQ_SIZE              256
 
 static void cam_tasklet_action(unsigned long data);
 
@@ -36,7 +27,6 @@ static void cam_tasklet_action(unsigned long data);
  * @handler_priv:           Private data passed at event subscribe
  * @bottom_half_handler:    Function pointer for event handler in bottom
  *                          half context
- * @tasklet_enqueue_ts:     enqueue time of tasklet
  *
  */
 struct cam_tasklet_queue_cmd {
@@ -44,7 +34,6 @@ struct cam_tasklet_queue_cmd {
 	void                              *payload;
 	void                              *handler_priv;
 	CAM_IRQ_HANDLER_BOTTOM_HALF        bottom_half_handler;
-	ktime_t                            tasklet_enqueue_ts;
 };
 
 /**
@@ -220,7 +209,6 @@ void cam_tasklet_enqueue_cmd(
 	tasklet_cmd->bottom_half_handler = bottom_half_handler;
 	tasklet_cmd->payload = evt_payload_priv;
 	tasklet_cmd->handler_priv = handler_priv;
-	tasklet_cmd->tasklet_enqueue_ts = ktime_get();
 	spin_lock_irqsave(&tasklet->tasklet_lock, flags);
 	list_add_tail(&tasklet_cmd->list,
 		&tasklet->used_cmd_list);
@@ -334,25 +322,12 @@ static void cam_tasklet_action(unsigned long data)
 {
 	struct cam_tasklet_info          *tasklet_info = NULL;
 	struct cam_tasklet_queue_cmd     *tasklet_cmd = NULL;
-	ktime_t                           tasklet_exec_start_time;
-	void                             *cb = NULL;
+
 	tasklet_info = (struct cam_tasklet_info *)data;
 
 	while (!cam_tasklet_dequeue_cmd(tasklet_info, &tasklet_cmd)) {
-		cb = (void *)tasklet_cmd->bottom_half_handler;
-		cam_common_util_thread_switch_delay_detect(
-			"ISP Tasklet", "schedule", cb,
-			tasklet_cmd->tasklet_enqueue_ts,
-			CAM_TASKLET_SCHED_TIME_THRESHOLD);
-		tasklet_exec_start_time = ktime_get();
-
 		tasklet_cmd->bottom_half_handler(tasklet_cmd->handler_priv,
 			tasklet_cmd->payload);
-
-		cam_common_util_thread_switch_delay_detect(
-			"ISP Tasklet", "execution", cb,
-			tasklet_exec_start_time,
-			CAM_TASKLET_SCHED_TIME_THRESHOLD);
 		cam_tasklet_put_cmd(tasklet_info, (void **)(&tasklet_cmd));
 	}
 }

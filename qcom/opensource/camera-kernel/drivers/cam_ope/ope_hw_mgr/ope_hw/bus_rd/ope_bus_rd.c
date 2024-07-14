@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -26,7 +26,6 @@
 #include "ope_hw.h"
 #include "ope_dev_intf.h"
 #include "ope_bus_rd.h"
-#include "cam_common_util.h"
 
 static struct ope_bus_rd *bus_rd;
 
@@ -154,7 +153,6 @@ static uint32_t *cam_ope_bus_rd_update(struct ope_hw *ope_hw_info,
 	uint32_t temp_reg[128] = {0};
 	uint32_t rm_id, header_size;
 	uint32_t rsc_type;
-	uint32_t *next_buff_addr = NULL;
 	struct cam_hw_prepare_update_args *prepare_args;
 	struct cam_ope_ctx *ctx_data;
 	struct cam_ope_request *ope_request;
@@ -307,12 +305,10 @@ static uint32_t *cam_ope_bus_rd_update(struct ope_hw *ope_hw_info,
 			io_port_cdm->s_cdm_info[l][idx].addr = kmd_buf;
 			io_port_cdm->num_s_cmd_bufs[l]++;
 
-			next_buff_addr = cdm_ops->cdm_write_regrandom(
+			kmd_buf = cdm_ops->cdm_write_regrandom(
 				kmd_buf, count/2, temp_reg);
-			if (next_buff_addr > kmd_buf)
-				prepare->kmd_buf_offset +=
-					((count + header_size) * sizeof(temp));
-			kmd_buf = next_buff_addr;
+			prepare->kmd_buf_offset += ((count + header_size) *
+				sizeof(temp));
 			CAM_DBG(CAM_OPE, "b:%d io:%d p:%d s:%d",
 				batch_idx, io_idx, k, l);
 			for (m = 0; m < count; m += 2)
@@ -343,7 +339,6 @@ static uint32_t *cam_ope_bus_rm_disable(struct ope_hw *ope_hw_info,
 	uint32_t count = 0;
 	uint32_t temp = 0;
 	uint32_t header_size;
-	uint32_t *next_buff_addr = NULL;
 	struct cam_ope_ctx *ctx_data;
 	struct ope_bus_rd_ctx *bus_rd_ctx;
 	struct cam_ope_bus_rd_reg *rd_reg;
@@ -402,12 +397,11 @@ static uint32_t *cam_ope_bus_rm_disable(struct ope_hw *ope_hw_info,
 		io_port_cdm->s_cdm_info[l][idx].addr = kmd_buf;
 		io_port_cdm->num_s_cmd_bufs[l]++;
 
-		next_buff_addr = cdm_ops->cdm_write_regrandom(
+		kmd_buf = cdm_ops->cdm_write_regrandom(
 			kmd_buf, count/2, temp_reg);
-		if (next_buff_addr > kmd_buf)
-			prepare->kmd_buf_offset += ((count + header_size) *
-				sizeof(temp));
-		kmd_buf = next_buff_addr;
+		prepare->kmd_buf_offset += ((count + header_size) *
+			sizeof(temp));
+
 		CAM_DBG(CAM_OPE, "RD cmd bufs = %d",
 			io_port_cdm->num_s_cmd_bufs[l]);
 		CAM_DBG(CAM_OPE, "stripe %d off:%d len:%d",
@@ -431,7 +425,6 @@ static int cam_ope_bus_rd_prepare(struct ope_hw *ope_hw_info,
 	uint32_t temp_reg[32] = {0};
 	uint32_t header_size;
 	uint32_t *kmd_buf;
-	uint32_t *next_buff_addr = NULL;
 	int is_rm_enabled;
 	struct cam_ope_dev_prepare_req *prepare;
 	struct cam_ope_ctx *ctx_data;
@@ -543,12 +536,10 @@ static int cam_ope_bus_rd_prepare(struct ope_hw *ope_hw_info,
 		io_port_cdm->go_cmd_offset =
 			prepare->kmd_buf_offset;
 	}
-	next_buff_addr = cdm_ops->cdm_write_regrandom(
+	kmd_buf = cdm_ops->cdm_write_regrandom(
 		kmd_buf, count/2, temp_reg);
-	if (next_buff_addr > kmd_buf)
-		prepare->kmd_buf_offset +=
-			((count + header_size) * sizeof(temp));
-	kmd_buf = next_buff_addr;
+	prepare->kmd_buf_offset +=
+		((count + header_size) * sizeof(temp));
 	CAM_DBG(CAM_OPE, "kmd_buf:%x,offset:%d",
 		kmd_buf, prepare->kmd_buf_offset);
 	CAM_DBG(CAM_OPE, "t_reg:%xcount: %d size:%d",
@@ -701,7 +692,7 @@ static int cam_ope_bus_rd_init(struct ope_hw *ope_hw_info,
 	cam_io_w_mb(bus_rd_reg_val->sw_reset,
 		ope_hw_info->bus_rd_reg->base + bus_rd_reg->sw_reset);
 
-	rc = cam_common_wait_for_completion_timeout(
+	rc = wait_for_completion_timeout(
 		&bus_rd->reset_complete, msecs_to_jiffies(30000));
 
 	if (!rc || rc < 0) {
@@ -880,3 +871,4 @@ int cam_ope_bus_rd_process(struct ope_hw *ope_hw_info,
 
 	return rc;
 }
+

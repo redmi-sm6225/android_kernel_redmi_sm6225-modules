@@ -1,49 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 #include <linux/slab.h>
 #include "cam_ife_csid_soc.h"
+#include "cam_cpas_api.h"
 #include "cam_debug_util.h"
 
 static int cam_ife_csid_get_dt_properties(struct cam_hw_soc_info *soc_info)
 {
 	struct device_node *of_node = NULL;
-	struct cam_csid_soc_private *soc_private = NULL;
+	struct csid_device_soc_info *csid_soc_info = NULL;
 	int rc = 0;
 
 	of_node = soc_info->pdev->dev.of_node;
+	csid_soc_info = (struct csid_device_soc_info *)soc_info->soc_private;
 
 	rc = cam_soc_util_get_dt_properties(soc_info);
 	if (rc)
 		return rc;
-
-	soc_private = (struct cam_csid_soc_private *)soc_info->soc_private;
-
-	rc = of_property_read_u32(of_node, "max-width",
-		&soc_private->max_width);
-	if (rc) {
-		CAM_DBG(CAM_ISP, "No max-width declared");
-		soc_private->max_width_enabled = false;
-		rc = 0;
-	} else {
-		soc_private->max_width_enabled = true;
-	}
-
-	soc_private->is_ife_csid_lite = false;
-	if (strnstr(soc_info->compatible, "lite",
-		strlen(soc_info->compatible)) != NULL) {
-		soc_private->is_ife_csid_lite = true;
-	}
-
-	rc = of_property_read_u32(of_node, "rt-wrapper-base", &soc_private->rt_wrapper_base);
-	if (rc) {
-		soc_private->rt_wrapper_base = 0;
-		CAM_DBG(CAM_ISP, "rc: %d Error reading rt_wrapper_base for core_idx: %u",
-			rc, soc_info->index);
-		rc = 0;
-	}
 
 	return rc;
 }
@@ -64,8 +39,7 @@ static int cam_ife_csid_request_platform_resource(
 }
 
 int cam_ife_csid_init_soc_resources(struct cam_hw_soc_info *soc_info,
-	irq_handler_t csid_irq_handler, cam_cpas_client_cb_func cpas_cb,
-	void *data, bool is_custom)
+	irq_handler_t csid_irq_handler, void *irq_data, bool is_custom)
 {
 	int rc = 0;
 	struct cam_cpas_register_params   cpas_register_param;
@@ -84,13 +58,14 @@ int cam_ife_csid_init_soc_resources(struct cam_hw_soc_info *soc_info,
 	/* Need to see if we want post process the clock list */
 
 	rc = cam_ife_csid_request_platform_resource(soc_info, csid_irq_handler,
-		data);
+		irq_data);
 	if (rc < 0) {
 		CAM_ERR(CAM_ISP,
 			"Error Request platform resources failed rc=%d", rc);
 		goto free_soc_private;
 	}
 
+	memset(&cpas_register_param, 0, sizeof(cpas_register_param));
 	if (is_custom)
 		strlcpy(cpas_register_param.identifier, "csid-custom",
 			CAM_HW_IDENTIFIER_LENGTH);
@@ -100,8 +75,6 @@ int cam_ife_csid_init_soc_resources(struct cam_hw_soc_info *soc_info,
 
 	cpas_register_param.cell_index = soc_info->index;
 	cpas_register_param.dev = soc_info->dev;
-	cpas_register_param.cam_cpas_client_cb = cpas_cb;
-	cpas_register_param.userdata = data;
 	rc = cam_cpas_register_client(&cpas_register_param);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "CPAS registration failed rc=%d", rc);
@@ -137,9 +110,6 @@ int cam_ife_csid_deinit_soc_resources(
 		CAM_ERR(CAM_ISP, "CPAS unregistration failed rc=%d", rc);
 
 	rc = cam_soc_util_release_platform_resource(soc_info);
-	if (rc)
-		CAM_WARN(CAM_ISP,
-			"soc release platform resource fail rc: %d", rc);
 
 	return rc;
 }

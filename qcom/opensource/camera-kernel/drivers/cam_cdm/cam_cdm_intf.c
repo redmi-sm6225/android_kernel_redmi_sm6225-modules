@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -17,7 +16,6 @@
 #include "cam_soc_util.h"
 #include "cam_cdm_soc.h"
 #include "cam_cdm_core_common.h"
-#include "camera_main.h"
 
 static struct cam_cdm_intf_mgr cdm_mgr;
 static DEFINE_MUTEX(cam_cdm_mgr_lock);
@@ -197,7 +195,6 @@ int cam_cdm_acquire(struct cam_cdm_acquire_data *data)
 			cdm_hw = hw->hw_priv;
 			core = (struct cam_cdm *)cdm_hw->core_info;
 			data->id = core->id;
-			data->hw_idx = hw->hw_idx;
 			CAM_DBG(CAM_CDM,
 				"Device = %s, hw_index = %d, CDM id = %d",
 				data->identifier, hw_index, data->id);
@@ -619,85 +616,9 @@ int cam_cdm_intf_deregister_hw_cdm(struct cam_hw_intf *hw,
 	return rc;
 }
 
-static int cam_cdm_set_irq_line_test(void *data, u64 val)
-{
-	int i, rc = 0;
-	struct cam_hw_intf *hw_intf;
-
-	if (get_cdm_mgr_refcount()) {
-		CAM_ERR(CAM_CDM, "CDM intf mgr get refcount failed");
-		return rc;
-	}
-	mutex_lock(&cam_cdm_mgr_lock);
-
-	for (i = 0 ; i < cdm_mgr.cdm_count; i++) {
-		if (!cdm_mgr.nodes[i].device || !cdm_mgr.nodes[i].data) {
-			CAM_ERR(CAM_CDM, "invalid node present in index=%d", i);
-			continue;
-		}
-
-		hw_intf = cdm_mgr.nodes[i].device;
-
-		if (hw_intf->hw_ops.test_irq_line) {
-			CAM_DBG(CAM_CDM, "Testing irq line for CDM at index %d", i);
-
-			rc = hw_intf->hw_ops.test_irq_line(hw_intf->hw_priv);
-			if (rc)
-				CAM_ERR(CAM_CDM,
-					"[%d] : CDM%d type %d - irq line test failed rc %d",
-					i, hw_intf->hw_idx, hw_intf->hw_type, rc);
-			else
-				CAM_INFO(CAM_CDM,
-					"[%d] : CDM%d type %d - irq line test passed",
-					i, hw_intf->hw_idx, hw_intf->hw_type);
-		} else {
-			CAM_WARN(CAM_CDM, "test irq line interface not present for cdm at index %d",
-				i);
-		}
-	}
-
-	mutex_unlock(&cam_cdm_mgr_lock);
-	put_cdm_mgr_refcount();
-
-	return rc;
-}
-
-static int cam_cdm_get_irq_line_test(void *data, u64 *val)
-{
-	return 0;
-}
-
-
-DEFINE_DEBUGFS_ATTRIBUTE(cam_cdm_irq_line_test, cam_cdm_get_irq_line_test,
-	cam_cdm_set_irq_line_test, "%16llu");
-
-int cam_cdm_debugfs_init(struct cam_cdm_intf_mgr *mgr)
-{
-	struct dentry *dbgfileptr = NULL;
-	int rc;
-
-	if (!cam_debugfs_available())
-		return 0;
-
-	rc = cam_debugfs_create_subdir("cdm", &dbgfileptr);
-	if (rc) {
-		CAM_ERR(CAM_CDM, "DebugFS could not create directory!");
-		return rc;
-	}
-
-	mgr->dentry = dbgfileptr;
-
-	debugfs_create_file("test_irq_line", 0644,
-		mgr->dentry, NULL, &cam_cdm_irq_line_test);
-
-	return 0;
-}
-
-static int cam_cdm_intf_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_cdm_intf_probe(struct platform_device *pdev)
 {
 	int i, rc;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	rc = cam_cdm_intf_mgr_soc_get_dt_properties(pdev, &cdm_mgr);
 	if (rc) {
@@ -731,27 +652,23 @@ static int cam_cdm_intf_component_bind(struct device *dev,
 		mutex_unlock(&cam_cdm_mgr_lock);
 	}
 
-	cam_cdm_debugfs_init(&cdm_mgr);
-
-	CAM_DBG(CAM_CDM, "CDM Intf component bound successfully");
+	CAM_DBG(CAM_CDM, "CDM Intf probe done");
 
 	return rc;
 }
 
-static void cam_cdm_intf_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_cdm_intf_remove(struct platform_device *pdev)
 {
-	int i;
-	struct platform_device *pdev = to_platform_device(dev);
+	int i, rc = -EBUSY;
 
 	if (get_cdm_mgr_refcount()) {
 		CAM_ERR(CAM_CDM, "CDM intf mgr get refcount failed");
-		return;
+		return rc;
 	}
 
 	if (cam_virtual_cdm_remove(pdev)) {
 		CAM_ERR(CAM_CDM, "Virtual CDM remove failed");
-		return;
+		goto end;
 	}
 	put_cdm_mgr_refcount();
 
@@ -766,6 +683,7 @@ static void cam_cdm_intf_component_unbind(struct device *dev,
 		if (cdm_mgr.nodes[i].device || cdm_mgr.nodes[i].data ||
 			(cdm_mgr.nodes[i].refcount != 0)) {
 			CAM_ERR(CAM_CDM, "Valid node present in index=%d", i);
+			mutex_unlock(&cam_cdm_mgr_lock);
 			goto end;
 		}
 		mutex_destroy(&cdm_mgr.nodes[i].lock);
@@ -773,44 +691,22 @@ static void cam_cdm_intf_component_unbind(struct device *dev,
 		cdm_mgr.nodes[i].data = NULL;
 		cdm_mgr.nodes[i].refcount = 0;
 	}
-
 	cdm_mgr.probe_done = false;
+	rc = 0;
 
 end:
 	mutex_unlock(&cam_cdm_mgr_lock);
-}
-
-const static struct component_ops cam_cdm_intf_component_ops = {
-	.bind = cam_cdm_intf_component_bind,
-	.unbind = cam_cdm_intf_component_unbind,
-};
-
-static int cam_cdm_intf_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_CDM, "Adding CDM INTF component");
-	rc = component_add(&pdev->dev, &cam_cdm_intf_component_ops);
-	if (rc)
-		CAM_ERR(CAM_CDM, "failed to add component rc: %d", rc);
-
 	return rc;
 }
 
-static int cam_cdm_intf_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_cdm_intf_component_ops);
-	return 0;
-}
-
-struct platform_driver cam_cdm_intf_driver = {
+static struct platform_driver cam_cdm_intf_driver = {
 	.probe = cam_cdm_intf_probe,
 	.remove = cam_cdm_intf_remove,
 	.driver = {
-		.name = "msm_cam_cdm_intf",
-		.owner = THIS_MODULE,
-		.of_match_table = msm_cam_cdm_intf_dt_match,
-		.suppress_bind_attrs = true,
+	.name = "msm_cam_cdm_intf",
+	.owner = THIS_MODULE,
+	.of_match_table = msm_cam_cdm_intf_dt_match,
+	.suppress_bind_attrs = true,
 	},
 };
 

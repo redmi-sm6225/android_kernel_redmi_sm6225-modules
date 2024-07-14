@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_CORE_H_
@@ -12,28 +12,8 @@
 #include "cam_vfe_bus.h"
 #include "cam_vfe_hw_intf.h"
 
-#define CAM_VFE_HW_IRQ_CAP_SOF             BIT(0)
-#define CAM_VFE_HW_IRQ_CAP_EPOCH_0         BIT(1)
-#define CAM_VFE_HW_IRQ_CAP_EPOCH_1         BIT(2)
-#define CAM_VFE_HW_IRQ_CAP_RUP             BIT(3)
-#define CAM_VFE_HW_IRQ_CAP_BUF_DONE        BIT(4)
-#define CAM_VFE_HW_IRQ_CAP_EOF             BIT(5)
-#define CAM_VFE_HW_IRQ_CAP_RESET           BIT(6)
-
-#define CAM_VFE_HW_IRQ_CAP_INT_CSID        0x7F
-#define CAM_VFE_HW_IRQ_CAP_LITE_INT_CSID   0x79
-#define CAM_VFE_HW_IRQ_CAP_EXT_CSID        0x27
-#define CAM_VFE_HW_IRQ_CAP_LITE_EXT_CSID   0x21
-
-struct cam_vfe_irq_hw_info {
-	int                                   reset_irq_handle;
-	uint32_t                              reset_mask;
-	struct cam_irq_controller_reg_info   *top_irq_reg;
-	uint32_t                              supported_irq;
-};
-
 struct cam_vfe_hw_info {
-	struct cam_vfe_irq_hw_info       *irq_hw_info;
+	struct cam_irq_controller_reg_info *irq_reg_info;
 
 	uint32_t                          bus_version;
 	void                             *bus_hw_info;
@@ -48,6 +28,18 @@ struct cam_vfe_hw_info {
 
 	uint32_t                          camif_lite_version;
 	void                             *camif_lite_reg;
+
+	uint32_t                          testgen_version;
+	void                             *testgen_reg;
+
+	uint32_t                          num_qos_settings;
+	struct cam_isp_reg_val_pair      *qos_settings;
+
+	uint32_t                          num_ds_settings;
+	struct cam_isp_reg_val_pair      *ds_settings;
+
+	uint32_t                          num_vbif_settings;
+	struct cam_isp_reg_val_pair      *vbif_settings;
 };
 
 #define CAM_VFE_EVT_MAX                    256
@@ -60,6 +52,7 @@ struct cam_vfe_hw_core_info {
 	struct cam_vfe_bus                 *vfe_rd_bus;
 	void                               *tasklet_info;
 	spinlock_t                          spin_lock;
+	int                                 reset_irq_handle;
 };
 
 int cam_vfe_get_hw_caps(void *device_priv,
@@ -84,7 +77,6 @@ int cam_vfe_write(void *device_priv,
 	void *write_args, uint32_t arg_size);
 int cam_vfe_process_cmd(void *device_priv, uint32_t cmd_type,
 	void *cmd_args, uint32_t arg_size);
-int cam_vfe_test_irq_line(void *hw_priv);
 
 irqreturn_t cam_vfe_irq(int irq_num, void *data);
 

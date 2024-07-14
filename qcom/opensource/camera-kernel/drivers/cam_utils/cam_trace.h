@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #if !defined(_CAM_TRACE_H) || defined(TRACE_HEADER_MULTI_READ)
@@ -20,7 +20,6 @@
 #include "cam_context.h"
 
 #define CAM_DEFAULT_VALUE 0xFF
-#define CAM_TRACE_PRINT_MAX_LEN 512
 
 TRACE_EVENT(cam_context_state,
 	TP_PROTO(const char *name, struct cam_context *ctx),
@@ -51,7 +50,6 @@ TRACE_EVENT(cam_isp_activated_irq,
 		__field(uint32_t, substate)
 		__field(uint32_t, event)
 		__field(uint64_t, ts)
-		__field(int32_t, link_hdl)
 	),
 	TP_fast_assign(
 		__entry->ctx = ctx;
@@ -59,13 +57,11 @@ TRACE_EVENT(cam_isp_activated_irq,
 		__entry->substate = substate;
 		__entry->event = event;
 		__entry->ts = timestamp;
-		__entry->link_hdl = ctx->link_hdl;
-
 	),
 	TP_printk(
-		"ISP: IRQ ctx=%p ctx_state=%u substate=%u event=%u ts=%llu link_hdl=0x%x",
+		"ISP: IRQ ctx=%p ctx_state=%u substate=%u event=%u ts=%llu",
 			__entry->ctx, __entry->state, __entry->substate,
-			__entry->event, __entry->ts, __entry->link_hdl
+			__entry->event, __entry->ts
 	)
 );
 
@@ -92,23 +88,6 @@ TRACE_EVENT(cam_log_event,
 	)
 );
 
-TRACE_EVENT(cam_log_debug,
-	TP_PROTO(const char *fmt, va_list *args),
-	TP_ARGS(fmt, args),
-	TP_STRUCT__entry(
-		__dynamic_array(char, msg, CAM_TRACE_PRINT_MAX_LEN)
-	),
-	TP_fast_assign(
-		va_list ap;
-
-		va_copy(ap, *args);
-		vsnprintf(__get_dynamic_array(msg), CAM_TRACE_PRINT_MAX_LEN, fmt, ap);
-		va_end(ap);
-	),
-	TP_printk("%s", __get_str(msg))
-);
-
-
 TRACE_EVENT(cam_icp_fw_dbg,
 	TP_PROTO(char *dbg_message, uint64_t timestamp),
 	TP_ARGS(dbg_message, timestamp),
@@ -133,43 +112,20 @@ TRACE_EVENT(cam_buf_done,
 	TP_STRUCT__entry(
 		__string(ctx_type, ctx_type)
 		__field(void*, ctx)
-		__field(int32_t, link_hdl)
 		__field(uint64_t, request)
 	),
 	TP_fast_assign(
 		__assign_str(ctx_type, ctx_type);
 		__entry->ctx = ctx;
-		__entry->link_hdl = ctx->link_hdl;
 		__entry->request = req->request_id;
 	),
 	TP_printk(
-		"%5s: BufDone ctx=%p request=%llu link_hdl=0x%x",
-			__get_str(ctx_type), __entry->ctx, __entry->request, __entry->link_hdl
+		"%5s: BufDone ctx=%p request=%llu",
+			__get_str(ctx_type), __entry->ctx, __entry->request
 	)
 );
 
 TRACE_EVENT(cam_apply_req,
-	TP_PROTO(const char *entity, uint32_t id, uint64_t req_id,int32_t link_hdl),
-	TP_ARGS(entity, id, req_id, link_hdl),
-	TP_STRUCT__entry(
-		__string(entity, entity)
-		__field(uint32_t, id)
-		__field(uint64_t, req_id)
-		__field(int32_t, link_hdl)
-	),
-	TP_fast_assign(
-		__assign_str(entity, entity);
-		__entry->id = id;
-		__entry->req_id = req_id;
-		__entry->link_hdl = link_hdl;
-	),
-	TP_printk(
-		"%8s: ApplyRequest id=%u request=%llu link_hdl=0x%x",
-			__get_str(entity), __entry->id, __entry->req_id, __entry->link_hdl
-	)
-);
-
-TRACE_EVENT(cam_notify_frame_skip,
 	TP_PROTO(const char *entity, uint64_t req_id),
 	TP_ARGS(entity, req_id),
 	TP_STRUCT__entry(
@@ -181,7 +137,7 @@ TRACE_EVENT(cam_notify_frame_skip,
 		__entry->req_id = req_id;
 	),
 	TP_printk(
-		"%8s: NotifyFrameSkip request=%llu",
+		"%8s: ApplyRequest request=%llu",
 			__get_str(entity), __entry->req_id
 	)
 );
@@ -243,7 +199,6 @@ TRACE_EVENT(cam_req_mgr_apply_request,
 		__string(name, dev->dev_info.name)
 		__field(uint32_t, dev_id)
 		__field(uint64_t, req_id)
-		__field(int32_t, link_hdl)
 		__field(void*, link)
 		__field(void*, session)
 	),
@@ -253,12 +208,11 @@ TRACE_EVENT(cam_req_mgr_apply_request,
 		__entry->req_id  = req->request_id;
 		__entry->link    = link;
 		__entry->session = link->parent;
-		__entry->link_hdl = req->link_hdl;
 	),
 	TP_printk(
-		"ReqMgr ApplyRequest devname=%s devid=%u request=%lld link=%pK session=%pK link_hdl=0x%x",
+		"ReqMgr ApplyRequest devname=%s devid=%u request=%lld link=%pK session=%pK",
 			__get_str(name), __entry->dev_id, __entry->req_id,
-			__entry->link, __entry->session, __entry->link_hdl
+			__entry->link, __entry->session
 	)
 );
 
@@ -278,7 +232,6 @@ TRACE_EVENT(cam_req_mgr_add_req,
 		__field(uint32_t, devicemap)
 		__field(void*, link)
 		__field(void*, session)
-		__field(int32_t, link_hdl)
 	),
 	TP_fast_assign(
 		__assign_str(name, dev->dev_info.name);
@@ -289,15 +242,13 @@ TRACE_EVENT(cam_req_mgr_add_req,
 		__entry->readymap  = tbl->slot[idx].req_ready_map;
 		__entry->devicemap = tbl->dev_mask;
 		__entry->link      = link;
-		__entry->link_hdl  = link->link_hdl;
 		__entry->session   = link->parent;
 	),
 	TP_printk(
-		"ReqMgr AddRequest devname=%s devid=%d request=%lld slot=%d pd=%d readymap=%x devicemap=%d link=%pK session=%pK link_hdl=0x%x",
+		"ReqMgr AddRequest devname=%s devid=%d request=%lld slot=%d pd=%d readymap=%x devicemap=%d link=%pK session=%pK",
 			__get_str(name), __entry->dev_id, __entry->req_id,
 			__entry->slot_id, __entry->delay, __entry->readymap,
-			__entry->devicemap, __entry->link, __entry->session,
-			__entry->link_hdl
+			__entry->devicemap, __entry->link, __entry->session
 	)
 );
 

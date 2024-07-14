@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -20,8 +19,6 @@
 #include "cam_subdev.h"
 #include "cam_cpas_hw_intf.h"
 #include "cam_cpas_soc.h"
-#include "camera_main.h"
-#include "cam_cpastop_hw.h"
 
 #define CAM_CPAS_DEV_NAME    "cam-cpas"
 #define CAM_CPAS_INTF_INITIALIZED() (g_cpas_intf && g_cpas_intf->probe_done)
@@ -87,8 +84,6 @@ const char *cam_cpas_axi_util_path_type_to_string(
 		return "IPE_WR_DISP";
 	case CAM_AXI_PATH_DATA_IPE_WR_REF:
 		return "IPE_WR_REF";
-	case CAM_AXI_PATH_DATA_IPE_WR_APP:
-		return "IPE_WR_APP";
 
 	/* OPE Paths */
 	case CAM_AXI_PATH_DATA_OPE_RD_IN:
@@ -101,26 +96,6 @@ const char *cam_cpas_axi_util_path_type_to_string(
 		return "OPE_WR_DISP";
 	case CAM_AXI_PATH_DATA_OPE_WR_REF:
 		return "OPE_WR_REF";
-
-	/* SFE Paths */
-	case CAM_AXI_PATH_DATA_SFE_NRDI:
-		return "SFE_NRDI";
-	case CAM_AXI_PATH_DATA_SFE_RDI0:
-		return "SFE_RDI0";
-	case CAM_AXI_PATH_DATA_SFE_RDI1:
-		return "SFE_RDI1";
-	case CAM_AXI_PATH_DATA_SFE_RDI2:
-		return "SFE_RDI2";
-	case CAM_AXI_PATH_DATA_SFE_RDI3:
-		return "SFE_RDI3";
-	case CAM_AXI_PATH_DATA_SFE_RDI4:
-		return "SFE_RDI4";
-	case CAM_AXI_PATH_DATA_SFE_STATS:
-		return "SFE_STATS";
-	case CAM_AXI_PATH_DATA_CRE_RD_IN:
-		return "CRE_RD_IN";
-	case CAM_AXI_PATH_DATA_CRE_WR_OUT:
-		return "CRE_WR_OUT";
 
 	/* Common Paths */
 	case CAM_AXI_PATH_DATA_ALL:
@@ -145,163 +120,13 @@ const char *cam_cpas_axi_util_trans_type_to_string(
 }
 EXPORT_SYMBOL(cam_cpas_axi_util_trans_type_to_string);
 
-const char *cam_cpas_axi_util_drv_vote_lvl_to_string(
-	uint32_t vote_lvl)
-{
-	switch (vote_lvl) {
-	case CAM_CPAS_VOTE_LEVEL_LOW:
-		return "VOTE_LVL_LOW";
-	case CAM_CPAS_VOTE_LEVEL_HIGH:
-		return "VOTE_LVL_HIGH";
-	default:
-		return "VOTE_LVL_INVALID";
-	}
-}
-EXPORT_SYMBOL(cam_cpas_axi_util_drv_vote_lvl_to_string);
-
-int cam_cpas_query_drv_enable(bool *is_drv_enabled)
+bool cam_cpas_is_feature_supported(uint32_t flag,
+	uint32_t hw_id)
 {
 	struct cam_hw_info *cpas_hw = NULL;
 	struct cam_cpas_private_soc *soc_private = NULL;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (!is_drv_enabled) {
-		CAM_ERR(CAM_CPAS, "invalid input %pK", is_drv_enabled);
-		return -EINVAL;
-	}
-
-	cpas_hw = (struct cam_hw_info  *) g_cpas_intf->hw_intf->hw_priv;
-	soc_private = (struct cam_cpas_private_soc *) cpas_hw->soc_info.soc_private;
-
-	*is_drv_enabled = soc_private->enable_cam_ddr_drv;
-
-	return 0;
-}
-EXPORT_SYMBOL(cam_cpas_query_drv_enable);
-
-int cam_cpas_csid_process_resume(uint32_t csid_idx)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_CSID_PROCESS_RESUME, &csid_idx,
-			sizeof(uint32_t));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_csid_process_resume);
-
-
-int cam_cpas_csid_input_core_info_update(int csid_idx, int sfe_idx, bool set_port)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		struct cam_cpas_hw_cmd_csid_input_core_info_update core_info_update;
-
-		core_info_update.csid_idx = csid_idx;
-		core_info_update.sfe_idx = sfe_idx;
-		core_info_update.set_port = set_port;
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_CSID_INPUT_CORE_INFO_UPDATE, &core_info_update,
-			sizeof(core_info_update));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_csid_input_core_info_update);
-
-int cam_cpas_dump_camnoc_buff_fill_info(uint32_t client_handle)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_DUMP_BUFF_FILL_INFO, &client_handle,
-			sizeof(uint32_t));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_dump_camnoc_buff_fill_info);
-
-bool cam_cpas_is_part_supported(uint32_t flag, uint32_t hw_map, uint32_t part_info)
-{
-	int32_t i;
-	struct cam_hw_info *cpas_hw = g_cpas_intf->hw_intf->hw_priv;
-	struct cam_cpas *cpas_core = cpas_hw->core_info;
-	struct cam_camnoc_info *camnoc_info = cpas_core->camnoc_info;
-	struct cam_cpas_subpart_info *cam_subpart_info = NULL;
-
-	if (!camnoc_info) {
-		CAM_ERR(CAM_CPAS, "Invalid camnoc info for hw_version: 0x%x",
-				cpas_hw->soc_info.hw_version);
-		return false;
-	}
-	cam_subpart_info = camnoc_info->cam_subpart_info;
-
-	if (!cam_subpart_info) {
-		CAM_DBG(CAM_CPAS, "Invalid address of cam_subpart_info");
-		return true;
-	}
-
-	for (i = 0; i < cam_subpart_info->num_bits; i++) {
-		if ((cam_subpart_info->hw_bitmap_mask[i][0] == flag) &&
-				(cam_subpart_info->hw_bitmap_mask[i][1] == hw_map)) {
-			CAM_DBG(CAM_CPAS, "flag: %u hw_map: %u part_info:0x%x",
-					flag, hw_map, part_info);
-			return ((part_info & BIT(i)) == 0);
-		}
-	}
-	return true;
-}
-
-bool cam_cpas_is_feature_supported(uint32_t flag, uint32_t hw_map,
-	uint32_t *fuse_val)
-{
-	struct cam_hw_info *cpas_hw = NULL;
-	struct cam_cpas_private_soc *soc_private = NULL;
-	bool supported = true;
-	int32_t i;
+	uint32_t i;
+	bool  supported = true;
 
 	if (!CAM_CPAS_INTF_INITIALIZED()) {
 		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
@@ -317,32 +142,14 @@ bool cam_cpas_is_feature_supported(uint32_t flag, uint32_t hw_map,
 		return false;
 	}
 
-	supported = cam_cpas_is_part_supported(flag, hw_map, soc_private->part_info);
-
-	for (i = 0; i < soc_private->num_feature_info; i++)
-		if (soc_private->feature_info[i].feature == flag)
+	for (i = 0; i < soc_private->num_feature_entries; i++) {
+		if ((soc_private->feature_info[i].feature == flag) &&
+			(soc_private->feature_info[i].hw_id == hw_id)) {
+			supported = soc_private->feature_info[i].enable;
 			break;
-
-	if (i == soc_private->num_feature_info)
-		goto end;
-
-	if (soc_private->feature_info[i].type == CAM_CPAS_FEATURE_TYPE_DISABLE
-		|| (soc_private->feature_info[i].type ==
-		CAM_CPAS_FEATURE_TYPE_ENABLE)) {
-		if ((soc_private->feature_info[i].hw_map & hw_map) == hw_map) {
-			if (!(supported && soc_private->feature_info[i].enable))
-				supported = false;
-		}
-	} else {
-		if (!fuse_val) {
-			CAM_ERR(CAM_CPAS,
-				"Invalid arg fuse_val");
-		} else {
-			*fuse_val = soc_private->feature_info[i].value;
 		}
 	}
 
-end:
 	return supported;
 }
 EXPORT_SYMBOL(cam_cpas_is_feature_supported);
@@ -376,8 +183,7 @@ int cam_cpas_get_cpas_hw_version(uint32_t *hw_version)
 int cam_cpas_get_hw_info(uint32_t *camera_family,
 	struct cam_hw_version *camera_version,
 	struct cam_hw_version *cpas_version,
-	uint32_t *cam_caps,
-	struct cam_cpas_fuse_info *cam_fuse_info)
+	uint32_t *cam_caps)
 {
 	if (!CAM_CPAS_INTF_INITIALIZED()) {
 		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
@@ -390,16 +196,10 @@ int cam_cpas_get_hw_info(uint32_t *camera_family,
 		return -EINVAL;
 	}
 
-	*camera_family  = g_cpas_intf->hw_caps.camera_family;
+	*camera_family = g_cpas_intf->hw_caps.camera_family;
 	*camera_version = g_cpas_intf->hw_caps.camera_version;
-	*cpas_version   = g_cpas_intf->hw_caps.cpas_version;
-	*cam_caps       = g_cpas_intf->hw_caps.camera_capability;
-	if (cam_fuse_info)
-		*cam_fuse_info  = g_cpas_intf->hw_caps.fuse_info;
-
-	CAM_DBG(CAM_CPAS, "Family %d, version %d.%d cam_caps %d",
-		*camera_family, camera_version->major,
-		camera_version->minor, *cam_caps);
+	*cpas_version = g_cpas_intf->hw_caps.cpas_version;
+	*cam_caps = g_cpas_intf->hw_caps.camera_capability;
 
 	return 0;
 }
@@ -615,8 +415,9 @@ int cam_cpas_start(uint32_t client_handle,
 }
 EXPORT_SYMBOL(cam_cpas_start);
 
-void cam_cpas_log_votes(bool ddr_only)
+void cam_cpas_log_votes(void)
 {
+	uint32_t dummy_args;
 	int rc;
 
 	if (!CAM_CPAS_INTF_INITIALIZED()) {
@@ -627,8 +428,8 @@ void cam_cpas_log_votes(bool ddr_only)
 	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
 		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
 			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_LOG_VOTE, &ddr_only,
-			sizeof(ddr_only));
+			CAM_CPAS_HW_CMD_LOG_VOTE, &dummy_args,
+			sizeof(dummy_args));
 		if (rc)
 			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
 	} else {
@@ -637,87 +438,6 @@ void cam_cpas_log_votes(bool ddr_only)
 
 }
 EXPORT_SYMBOL(cam_cpas_log_votes);
-
-int cam_cpas_select_qos_settings(uint32_t selection_mask)
-{
-	int rc = 0;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -EBADR;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_SELECT_QOS, &selection_mask,
-			sizeof(selection_mask));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EBADR;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_select_qos_settings);
-
-int cam_cpas_enable_tpg_mux_sel(uint32_t tpg_mux_sel)
-{
-	int rc = 0;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -EBADR;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_TPG_MUX_SEL, &tpg_mux_sel,
-			sizeof(tpg_mux_sel));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EBADR;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_enable_tpg_mux_sel);
-
-int cam_cpas_notify_event(const char *identifier_string,
-	int32_t identifier_value)
-{
-	int rc = 0;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -EBADR;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		struct cam_cpas_hw_cmd_notify_event event = { 0 };
-
-		event.identifier_string = identifier_string;
-		event.identifier_value = identifier_value;
-
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_LOG_EVENT, &event,
-			sizeof(event));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EBADR;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_notify_event);
 
 int cam_cpas_unregister_client(uint32_t client_handle)
 {
@@ -770,140 +490,6 @@ int cam_cpas_register_client(
 }
 EXPORT_SYMBOL(cam_cpas_register_client);
 
-int cam_cpas_get_scid(
-	enum cam_sys_cache_config_types type)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_GET_SCID, &type,
-			sizeof(type));
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_get_scid);
-
-int cam_cpas_prepare_subpart_info(uint32_t subpart_type, uint32_t subpart_count)
-{
-	struct cam_hw_info *cpas_hw = NULL;
-	struct cam_cpas_private_soc *soc_private = NULL;
-
-	cpas_hw = (struct cam_hw_info *) g_cpas_intf->hw_intf->hw_priv;
-
-	mutex_lock(&cpas_hw->hw_mutex);
-	soc_private = (struct cam_cpas_private_soc *)cpas_hw->soc_info.soc_private;
-
-	if (!soc_private) {
-		CAM_ERR(CAM_CPAS, "Invalid soc_private: 0x%x", soc_private);
-		mutex_unlock(&cpas_hw->hw_mutex);
-		return -EINVAL;
-	}
-
-	switch (subpart_type) {
-	case CAM_SYSFS_IFE_HW_IDX:
-		soc_private->sysfs_info.num_ifes = subpart_count;
-		break;
-	case CAM_SYSFS_IFE_LITE_HW_IDX:
-		soc_private->sysfs_info.num_ife_lites = subpart_count;
-		break;
-	case CAM_SYSFS_SFE_HW_IDX:
-		soc_private->sysfs_info.num_sfes = subpart_count;
-		break;
-	case CAM_SYSFS_CUSTOM_HW_IDX:
-		soc_private->sysfs_info.num_custom = subpart_count;
-		break;
-	default:
-		CAM_ERR(CAM_CPAS, "Invalid camera subpart type : %d", subpart_type);
-		mutex_unlock(&cpas_hw->hw_mutex);
-		return -EINVAL;
-	}
-
-	mutex_unlock(&cpas_hw->hw_mutex);
-	return 0;
-}
-EXPORT_SYMBOL(cam_cpas_prepare_subpart_info);
-
-int cam_cpas_activate_llcc(
-	enum cam_sys_cache_config_types type)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_ACTIVATE_LLC, &type,
-			sizeof(type));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_activate_llcc);
-
-int cam_cpas_deactivate_llcc(
-	enum cam_sys_cache_config_types type)
-{
-	int rc;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return -ENODEV;
-	}
-
-	if (g_cpas_intf->hw_intf->hw_ops.process_cmd) {
-		rc = g_cpas_intf->hw_intf->hw_ops.process_cmd(
-			g_cpas_intf->hw_intf->hw_priv,
-			CAM_CPAS_HW_CMD_DEACTIVATE_LLC, &type,
-			sizeof(type));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in process_cmd, rc=%d", rc);
-	} else {
-		CAM_ERR(CAM_CPAS, "Invalid process_cmd ops");
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-EXPORT_SYMBOL(cam_cpas_deactivate_llcc);
-
-bool cam_cpas_query_domain_id_security_support(void)
-{
-	struct cam_hw_info *cpas_hw = NULL;
-	struct cam_cpas_private_soc *soc_private = NULL;
-
-	if (!CAM_CPAS_INTF_INITIALIZED()) {
-		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return false;
-	}
-
-	cpas_hw = (struct cam_hw_info *) g_cpas_intf->hw_intf->hw_priv;
-	soc_private =
-		(struct cam_cpas_private_soc *)cpas_hw->soc_info.soc_private;
-
-	return soc_private->domain_id_info.domain_id_supported;
-}
-EXPORT_SYMBOL(cam_cpas_query_domain_id_security_support);
-
 int cam_cpas_subdev_cmd(struct cam_cpas_intf *cpas_intf,
 	struct cam_control *cmd)
 {
@@ -928,32 +514,7 @@ int cam_cpas_subdev_cmd(struct cam_cpas_intf *cpas_intf,
 
 		rc = cam_cpas_get_hw_info(&query.camera_family,
 			&query.camera_version, &query.cpas_version,
-			&query.reserved, NULL);
-		if (rc)
-			break;
-
-		rc = copy_to_user(u64_to_user_ptr(cmd->handle), &query,
-			sizeof(query));
-		if (rc)
-			CAM_ERR(CAM_CPAS, "Failed in copy to user, rc=%d", rc);
-
-		break;
-	}
-	case CAM_QUERY_CAP_V2: {
-		struct cam_cpas_query_cap_v2 query;
-
-		rc = copy_from_user(&query, u64_to_user_ptr(cmd->handle),
-			sizeof(query));
-		if (rc) {
-			CAM_ERR(CAM_CPAS, "Failed in copy from user, rc=%d",
-				rc);
-			break;
-		}
-
-		rc = cam_cpas_get_hw_info(&query.camera_family,
-			&query.camera_version, &query.cpas_version,
-			&query.reserved,
-			&query.fuse_info);
+			&query.reserved);
 		if (rc)
 			break;
 
@@ -993,7 +554,7 @@ static int cam_cpas_subdev_open(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int __cam_cpas_subdev_close(struct v4l2_subdev *sd,
+static int cam_cpas_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	struct cam_cpas_intf *cpas_intf = v4l2_get_subdevdata(sd);
@@ -1004,29 +565,11 @@ static int __cam_cpas_subdev_close(struct v4l2_subdev *sd,
 	}
 
 	mutex_lock(&cpas_intf->intf_lock);
-	if (cpas_intf->open_cnt <= 0) {
-		CAM_WARN(CAM_CPAS, "device already closed, open_cnt: %d", cpas_intf->open_cnt);
-		mutex_unlock(&cpas_intf->intf_lock);
-		return 0;
-	}
 	cpas_intf->open_cnt--;
 	CAM_DBG(CAM_CPAS, "CPAS Subdev close count %d", cpas_intf->open_cnt);
 	mutex_unlock(&cpas_intf->intf_lock);
 
 	return 0;
-}
-
-static int cam_cpas_subdev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_CPAS, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-
-	return __cam_cpas_subdev_close(sd, fh);
 }
 
 static long cam_cpas_subdev_ioctl(struct v4l2_subdev *sd,
@@ -1043,9 +586,6 @@ static long cam_cpas_subdev_ioctl(struct v4l2_subdev *sd,
 	switch (cmd) {
 	case VIDIOC_CAM_CONTROL:
 		rc = cam_cpas_subdev_cmd(cpas_intf, (struct cam_control *) arg);
-		break;
-	case CAM_SD_SHUTDOWN:
-		rc = __cam_cpas_subdev_close(sd, NULL);
 		break;
 	default:
 		CAM_ERR(CAM_CPAS, "Invalid command %d for CPAS!", cmd);
@@ -1134,7 +674,6 @@ static int cam_cpas_subdev_register(struct platform_device *pdev)
 	subdev->sd_flags =
 		V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
 	subdev->ent_function = CAM_CPAS_DEVICE_TYPE;
-	subdev->close_seq_prior = CAM_SD_CLOSE_LOW_PRIORITY;
 
 	rc = cam_register_subdev(subdev);
 	if (rc) {
@@ -1147,16 +686,14 @@ static int cam_cpas_subdev_register(struct platform_device *pdev)
 	return rc;
 }
 
-static int cam_cpas_dev_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_cpas_dev_probe(struct platform_device *pdev)
 {
 	struct cam_cpas_hw_caps *hw_caps;
 	struct cam_hw_intf *hw_intf;
 	int rc;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	if (g_cpas_intf) {
-		CAM_ERR(CAM_CPAS, "cpas component already binded");
+		CAM_ERR(CAM_CPAS, "cpas dev proble already done");
 		return -EALREADY;
 	}
 
@@ -1175,7 +712,6 @@ static int cam_cpas_dev_component_bind(struct device *dev,
 
 	hw_intf = g_cpas_intf->hw_intf;
 	hw_caps = &g_cpas_intf->hw_caps;
-
 	if (hw_intf->hw_ops.get_hw_caps) {
 		rc = hw_intf->hw_ops.get_hw_caps(hw_intf->hw_priv,
 			hw_caps, sizeof(struct cam_cpas_hw_caps));
@@ -1194,7 +730,7 @@ static int cam_cpas_dev_component_bind(struct device *dev,
 
 	g_cpas_intf->probe_done = true;
 	CAM_DBG(CAM_CPAS,
-		"Component bound successfully %d, %d.%d.%d, %d.%d.%d, 0x%x",
+		"CPAS INTF Probe success %d, %d.%d.%d, %d.%d.%d, 0x%x",
 		hw_caps->camera_family, hw_caps->camera_version.major,
 		hw_caps->camera_version.minor, hw_caps->camera_version.incr,
 		hw_caps->cpas_version.major, hw_caps->cpas_version.minor,
@@ -1208,16 +744,15 @@ error_destroy_mem:
 	mutex_destroy(&g_cpas_intf->intf_lock);
 	kfree(g_cpas_intf);
 	g_cpas_intf = NULL;
-	CAM_ERR(CAM_CPAS, "CPAS component bind failed");
+	CAM_ERR(CAM_CPAS, "CPAS probe failed");
 	return rc;
 }
 
-static void cam_cpas_dev_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_cpas_dev_remove(struct platform_device *dev)
 {
 	if (!CAM_CPAS_INTF_INITIALIZED()) {
 		CAM_ERR(CAM_CPAS, "cpas intf not initialized");
-		return;
+		return -ENODEV;
 	}
 
 	mutex_lock(&g_cpas_intf->intf_lock);
@@ -1228,28 +763,7 @@ static void cam_cpas_dev_component_unbind(struct device *dev,
 	mutex_destroy(&g_cpas_intf->intf_lock);
 	kfree(g_cpas_intf);
 	g_cpas_intf = NULL;
-}
 
-const static struct component_ops cam_cpas_dev_component_ops = {
-	.bind = cam_cpas_dev_component_bind,
-	.unbind = cam_cpas_dev_component_unbind,
-};
-
-static int cam_cpas_dev_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_CPAS, "Adding CPAS INTF component");
-	rc = component_add(&pdev->dev, &cam_cpas_dev_component_ops);
-	if (rc)
-		CAM_ERR(CAM_CPAS, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
-static int cam_cpas_dev_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_cpas_dev_component_ops);
 	return 0;
 }
 
@@ -1258,7 +772,7 @@ static const struct of_device_id cam_cpas_dt_match[] = {
 	{}
 };
 
-struct platform_driver cam_cpas_driver = {
+static struct platform_driver cam_cpas_driver = {
 	.probe = cam_cpas_dev_probe,
 	.remove = cam_cpas_dev_remove,
 	.driver = {

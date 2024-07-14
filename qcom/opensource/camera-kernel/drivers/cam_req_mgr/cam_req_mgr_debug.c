@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "cam_req_mgr_debug.h"
@@ -117,11 +117,8 @@ int cam_req_mgr_debug_register(struct cam_req_mgr_core_device *core_dev)
 	int rc = 0;
 	struct dentry *dbgfileptr = NULL;
 
-	if (!cam_debugfs_available())
-		return 0;
-
-	rc = cam_debugfs_create_subdir("req_mgr", &dbgfileptr);
-	if (rc) {
+	dbgfileptr = debugfs_create_dir("cam_req_mgr", NULL);
+	if (!dbgfileptr) {
 		CAM_ERR(CAM_MEM,"DebugFS could not create directory!");
 		rc = -ENOENT;
 		goto end;
@@ -133,18 +130,10 @@ int cam_req_mgr_debug_register(struct cam_req_mgr_core_device *core_dev)
 		core_dev, &session_info);
 	debugfs_create_file("bubble_recovery", 0644,
 		debugfs_root, core_dev, &bubble_recovery);
-	debugfs_create_bool("recovery_on_apply_fail", 0644,
-		debugfs_root, &core_dev->recovery_on_apply_fail);
-	debugfs_create_u32("delay_detect_count", 0644, debugfs_root,
-		&cam_debug_mgr_delay_detect);
+	debugfs_create_u32("delay_detect_count", 0644,
+		debugfs_root, &cam_debug_mgr_delay_detect);
 end:
 	return rc;
-}
-
-int cam_req_mgr_debug_unregister(void)
-{
-	debugfs_root = NULL;
-	return 0;
 }
 
 void cam_req_mgr_debug_delay_detect(void)

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
 #include <linux/firmware.h>
 
-#include "cam_sensor_cmn_header.h"
+#include <cam_sensor_cmn_header.h>
 #include "cam_ois_core.h"
 #include "cam_ois_soc.h"
 #include "cam_sensor_util.h"
@@ -105,13 +104,14 @@ static int cam_ois_get_dev_handle(struct cam_ois_ctrl_t *o_ctrl,
 
 static int cam_ois_power_up(struct cam_ois_ctrl_t *o_ctrl)
 {
-	int                                     rc = 0;
-	struct cam_hw_soc_info                 *soc_info = &o_ctrl->soc_info;
-	struct cam_ois_soc_private             *soc_private;
-	struct cam_sensor_power_ctrl_t         *power_info;
-	struct completion                      *i3c_probe_completion = NULL;
+	int                             rc = 0;
+	struct cam_hw_soc_info          *soc_info =
+		&o_ctrl->soc_info;
+	struct cam_ois_soc_private *soc_private;
+	struct cam_sensor_power_ctrl_t  *power_info;
 
-	soc_private = (struct cam_ois_soc_private *)o_ctrl->soc_info.soc_private;
+	soc_private =
+		(struct cam_ois_soc_private *)o_ctrl->soc_info.soc_private;
 	power_info = &soc_private->power_info;
 
 	if ((power_info->power_setting == NULL) &&
@@ -150,25 +150,15 @@ static int cam_ois_power_up(struct cam_ois_ctrl_t *o_ctrl)
 
 	power_info->dev = soc_info->dev;
 
-	if (o_ctrl->io_master_info.master_type == I3C_MASTER)
-		i3c_probe_completion = cam_ois_get_i3c_completion(o_ctrl->soc_info.index);
-
-	rc = cam_sensor_core_power_up(power_info, soc_info, i3c_probe_completion);
+	rc = cam_sensor_core_power_up(power_info, soc_info);
 	if (rc) {
 		CAM_ERR(CAM_OIS, "failed in ois power up rc %d", rc);
 		return rc;
 	}
 
 	rc = camera_io_init(&o_ctrl->io_master_info);
-	if (rc) {
+	if (rc)
 		CAM_ERR(CAM_OIS, "cci_init failed: rc: %d", rc);
-		goto cci_failure;
-	}
-
-	return rc;
-cci_failure:
-	if (cam_sensor_util_power_down(power_info, soc_info))
-		CAM_ERR(CAM_OIS, "Power Down failed");
 
 	return rc;
 }
@@ -209,50 +199,6 @@ static int cam_ois_power_down(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	camera_io_release(&o_ctrl->io_master_info);
-	o_ctrl->cam_ois_state = CAM_OIS_ACQUIRE;
-
-	return rc;
-}
-
-static int cam_ois_update_time(struct i2c_settings_array *i2c_set)
-{
-	struct i2c_settings_list *i2c_list;
-	int32_t rc = 0;
-	uint32_t size = 0;
-	uint32_t i = 0;
-	uint64_t qtime_ns = 0;
-
-	if (i2c_set == NULL) {
-		CAM_ERR(CAM_OIS, "Invalid Args");
-		return -EINVAL;
-	}
-
-	rc = cam_sensor_util_get_current_qtimer_ns(&qtime_ns);
-	if (rc < 0) {
-		CAM_ERR(CAM_OIS,
-			"Failed to get current qtimer value: %d",
-			rc);
-		return rc;
-	}
-
-	list_for_each_entry(i2c_list,
-		&(i2c_set->list_head), list) {
-		if (i2c_list->op_code ==  CAM_SENSOR_I2C_WRITE_SEQ) {
-			size = i2c_list->i2c_settings.size;
-			/* qtimer is 8 bytes so validate here*/
-			if (size < 8) {
-				CAM_ERR(CAM_OIS, "Invalid write time settings");
-				return -EINVAL;
-			}
-			for (i = 0; i < size; i++) {
-				CAM_DBG(CAM_OIS, "time: reg_data[%d]: 0x%x",
-					i, (qtime_ns & 0xFF));
-				i2c_list->i2c_settings.reg_setting[i].reg_data =
-					(qtime_ns & 0xFF);
-				qtime_ns >>= 8;
-			}
-		}
-	}
 
 	return rc;
 }
@@ -282,17 +228,6 @@ static int cam_ois_apply_settings(struct cam_ois_ctrl_t *o_ctrl,
 			if (rc < 0) {
 				CAM_ERR(CAM_OIS,
 					"Failed in Applying i2c wrt settings");
-				return rc;
-			}
-		} else if (i2c_list->op_code == CAM_SENSOR_I2C_WRITE_SEQ) {
-			rc = camera_io_dev_write_continuous(
-				&(o_ctrl->io_master_info),
-				&(i2c_list->i2c_settings),
-				CAM_SENSOR_I2C_WRITE_SEQ);
-			if (rc < 0) {
-				CAM_ERR(CAM_OIS,
-					"Failed to seq write I2C settings: %d",
-					rc);
 				return rc;
 			}
 		} else if (i2c_list->op_code == CAM_SENSOR_I2C_POLL) {
@@ -406,8 +341,6 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 		return -ENOMEM;
 	}
 
-	CAM_DBG(CAM_OIS, "FW prog size:%d.", total_bytes);
-
 	i2c_reg_setting.reg_setting = (struct cam_sensor_i2c_reg_array *) (
 		vaddr);
 
@@ -421,10 +354,9 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, CAM_SENSOR_I2C_WRITE_BURST);
+		&i2c_reg_setting, 1);
 	if (rc < 0) {
-		CAM_ERR(CAM_OIS, "OIS FW(prog) size(%d) download failed. %d",
-			total_bytes, rc);
+		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 		goto release_firmware;
 	}
 	vfree(vaddr);
@@ -452,8 +384,6 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 		return -ENOMEM;
 	}
 
-	CAM_DBG(CAM_OIS, "FW coeff size:%d", total_bytes);
-
 	i2c_reg_setting.reg_setting = (struct cam_sensor_i2c_reg_array *) (
 		vaddr);
 
@@ -467,11 +397,9 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, CAM_SENSOR_I2C_WRITE_BURST);
-
+		&i2c_reg_setting, 1);
 	if (rc < 0)
-		CAM_ERR(CAM_OIS, "OIS FW(coeff) size(%d) download failed rc: %d",
-			total_bytes, rc);
+		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 
 release_firmware:
 	vfree(vaddr);
@@ -529,7 +457,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		CAM_ERR(CAM_OIS,
 			"Inval cam_packet strut size: %zu, len_of_buff: %zu",
 			 sizeof(struct cam_packet), pkt_len);
-		cam_mem_put_cpu_buf(dev_config.packet_handle);
 		return -EINVAL;
 	}
 
@@ -540,9 +467,9 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 	if (cam_packet_util_validate_packet(csl_packet,
 		remain_len)) {
 		CAM_ERR(CAM_OIS, "Invalid packet params");
-		cam_mem_put_cpu_buf(dev_config.packet_handle);
 		return -EINVAL;
 	}
+
 
 	switch (csl_packet->header.op_code & 0xFFFFFF) {
 	case CAM_OIS_PACKET_OPCODE_INIT:
@@ -550,15 +477,8 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		offset += (csl_packet->cmd_buf_offset / sizeof(uint32_t));
 		cmd_desc = (struct cam_cmd_buf_desc *)(offset);
 
-		CAM_DBG(CAM_OIS, "num_cmd_buf %d",
-			csl_packet->num_cmd_buf);
-
 		/* Loop through multiple command buffers */
 		for (i = 0; i < csl_packet->num_cmd_buf; i++) {
-			rc = cam_packet_util_validate_cmd_desc(&cmd_desc[i]);
-			if (rc)
-				return rc;
-
 			total_cmd_buf_in_bytes = cmd_desc[i].length;
 			if (!total_cmd_buf_in_bytes)
 				continue;
@@ -568,14 +488,11 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			if (rc < 0) {
 				CAM_ERR(CAM_OIS, "Failed to get cpu buf : 0x%x",
 					cmd_desc[i].mem_handle);
-				cam_mem_put_cpu_buf(dev_config.packet_handle);
 				return rc;
 			}
 			cmd_buf = (uint32_t *)generic_ptr;
 			if (!cmd_buf) {
 				CAM_ERR(CAM_OIS, "invalid cmd buf");
-				cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-				cam_mem_put_cpu_buf(dev_config.packet_handle);
 				return -EINVAL;
 			}
 
@@ -584,8 +501,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				sizeof(struct common_header)))) {
 				CAM_ERR(CAM_OIS,
 					"Invalid length for sensor cmd");
-				cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-				cam_mem_put_cpu_buf(dev_config.packet_handle);
 				return -EINVAL;
 			}
 			remain_len = len_of_buff - cmd_desc[i].offset;
@@ -599,8 +514,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				if (rc < 0) {
 					CAM_ERR(CAM_OIS,
 					"Failed in parsing slave info");
-					cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-					cam_mem_put_cpu_buf(dev_config.packet_handle);
 					return rc;
 				}
 				break;
@@ -615,15 +528,13 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				if (rc) {
 					CAM_ERR(CAM_OIS,
 					"Failed: parse power settings");
-					cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-					cam_mem_put_cpu_buf(dev_config.packet_handle);
 					return rc;
 				}
 				break;
 			default:
 			if (o_ctrl->i2c_init_data.is_settings_valid == 0) {
 				CAM_DBG(CAM_OIS,
-				"Received init/config settings");
+				"Received init settings");
 				i2c_reg_settings =
 					&(o_ctrl->i2c_init_data);
 				i2c_reg_settings->is_settings_valid = 1;
@@ -635,8 +546,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				if (rc < 0) {
 					CAM_ERR(CAM_OIS,
 					"init parsing failed: %d", rc);
-					cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-					cam_mem_put_cpu_buf(dev_config.packet_handle);
 					return rc;
 				}
 			} else if ((o_ctrl->is_ois_calib != 0) &&
@@ -654,59 +563,20 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				if (rc < 0) {
 					CAM_ERR(CAM_OIS,
 						"Calib parsing failed: %d", rc);
-					cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
-					cam_mem_put_cpu_buf(dev_config.packet_handle);
-					return rc;
-				}
-			} else if (o_ctrl->i2c_fwinit_data.is_settings_valid == 0) {
-				CAM_DBG(CAM_OIS, "received fwinit settings");
-				i2c_reg_settings =
-					&(o_ctrl->i2c_fwinit_data);
-				i2c_reg_settings->is_settings_valid = 1;
-				i2c_reg_settings->request_id = 0;
-				rc = cam_sensor_i2c_command_parser(
-					&o_ctrl->io_master_info,
-					i2c_reg_settings,
-					&cmd_desc[i], 1, NULL);
-				if (rc < 0) {
-					CAM_ERR(CAM_OIS,
-					"fw init parsing failed: %d", rc);
 					return rc;
 				}
 			}
 			break;
 			}
-			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 		}
 
 		if (o_ctrl->cam_ois_state != CAM_OIS_CONFIG) {
 			rc = cam_ois_power_up(o_ctrl);
 			if (rc) {
 				CAM_ERR(CAM_OIS, " OIS Power up failed");
-				cam_mem_put_cpu_buf(dev_config.packet_handle);
 				return rc;
 			}
-		}
-
-		if (o_ctrl->i2c_fwinit_data.is_settings_valid == 1) {
-			rc = cam_ois_apply_settings(o_ctrl,
-				&o_ctrl->i2c_fwinit_data);
-			if ((rc == -EAGAIN) &&
-				(o_ctrl->io_master_info.master_type == CCI_MASTER)) {
-				CAM_WARN(CAM_OIS,
-					"CCI HW is restting: Reapplying fwinit settings");
-				usleep_range(1000, 1010);
-				rc = cam_ois_apply_settings(o_ctrl,
-					&o_ctrl->i2c_fwinit_data);
-			}
-			if (rc) {
-				CAM_ERR(CAM_OIS,
-					"Cannot apply fwinit data %d",
-					rc);
-				goto pwr_dwn;
-			} else {
-				CAM_DBG(CAM_OIS, "OIS fwinit settings success");
-			}
+			o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
 		}
 
 		if (o_ctrl->ois_fw_flag) {
@@ -731,36 +601,15 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 				"Cannot apply Init settings: rc = %d",
 				rc);
 			goto pwr_dwn;
-		} else {
-			CAM_DBG(CAM_OIS, "apply Init settings success");
 		}
 
 		if (o_ctrl->is_ois_calib) {
 			rc = cam_ois_apply_settings(o_ctrl,
 				&o_ctrl->i2c_calib_data);
-			if ((rc == -EAGAIN) &&
-				(o_ctrl->io_master_info.master_type == CCI_MASTER)) {
-				CAM_WARN(CAM_OIS,
-					"CCI HW is restting: Reapplying calib settings");
-				usleep_range(1000, 1010);
-				rc = cam_ois_apply_settings(o_ctrl,
-					&o_ctrl->i2c_calib_data);
-			}
 			if (rc) {
 				CAM_ERR(CAM_OIS, "Cannot apply calib data");
 				goto pwr_dwn;
-			} else {
-				CAM_DBG(CAM_OIS, "apply calib data settings success");
 			}
-		}
-
-		o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
-
-		rc = delete_request(&o_ctrl->i2c_fwinit_data);
-		if (rc < 0) {
-			CAM_WARN(CAM_OIS,
-				"Fail deleting fwinit data: rc: %d", rc);
-			rc = 0;
 		}
 
 		rc = delete_request(&o_ctrl->i2c_init_data);
@@ -782,7 +631,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			CAM_WARN(CAM_OIS,
 				"Not in right state to control OIS: %d",
 				o_ctrl->cam_ois_state);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 		offset = (uint32_t *)&csl_packet->payload;
@@ -796,14 +644,12 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			cmd_desc, 1, NULL);
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS, "OIS pkt parsing failed: %d", rc);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 
 		rc = cam_ois_apply_settings(o_ctrl, i2c_reg_settings);
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS, "Cannot apply mode settings");
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 
@@ -811,12 +657,10 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS,
 				"Fail deleting Mode data: rc: %d", rc);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 		break;
 	case CAM_OIS_PACKET_OPCODE_READ: {
-		uint64_t qtime_ns;
 		struct cam_buf_io_cfg *io_cfg;
 		struct i2c_settings_array i2c_read_settings;
 
@@ -825,7 +669,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			CAM_WARN(CAM_OIS,
 				"Not in right state to read OIS: %d",
 				o_ctrl->cam_ois_state);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 		CAM_DBG(CAM_OIS, "number of I/O configs: %d:",
@@ -833,7 +676,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		if (csl_packet->num_io_configs == 0) {
 			CAM_ERR(CAM_OIS, "No I/O configs to process");
 			rc = -EINVAL;
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 
@@ -843,11 +685,9 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			&csl_packet->payload +
 			csl_packet->io_configs_offset);
 
-		/* validate read data io config */
 		if (io_cfg == NULL) {
 			CAM_ERR(CAM_OIS, "I/O config is invalid(NULL)");
 			rc = -EINVAL;
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 
@@ -858,17 +698,9 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		i2c_read_settings.request_id = 0;
 		rc = cam_sensor_i2c_command_parser(&o_ctrl->io_master_info,
 			&i2c_read_settings,
-			cmd_desc, 1, &io_cfg[0]);
+			cmd_desc, 1, io_cfg);
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS, "OIS read pkt parsing failed: %d", rc);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-
-		rc = cam_sensor_util_get_current_qtimer_ns(&qtime_ns);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS, "failed to get qtimer rc:%d");
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 
@@ -878,74 +710,13 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS, "cannot read data rc: %d", rc);
 			delete_request(&i2c_read_settings);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
-		}
-
-		if (csl_packet->num_io_configs > 1) {
-			rc = cam_sensor_util_write_qtimer_to_io_buffer(
-				qtime_ns, &io_cfg[1]);
-			if (rc < 0) {
-				CAM_ERR(CAM_OIS,
-					"write qtimer failed rc: %d", rc);
-				delete_request(&i2c_read_settings);
-				cam_mem_put_cpu_buf(dev_config.packet_handle);
-				return rc;
-			}
 		}
 
 		rc = delete_request(&i2c_read_settings);
 		if (rc < 0) {
 			CAM_ERR(CAM_OIS,
 				"Failed in deleting the read settings");
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-		break;
-	}
-	case CAM_OIS_PACKET_OPCODE_WRITE_TIME: {
-		if (o_ctrl->cam_ois_state < CAM_OIS_CONFIG) {
-			rc = -EINVAL;
-			CAM_ERR(CAM_OIS,
-				"Not in right state to write time to OIS: %d",
-				o_ctrl->cam_ois_state);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-		offset = (uint32_t *)&csl_packet->payload;
-		offset += (csl_packet->cmd_buf_offset / sizeof(uint32_t));
-		cmd_desc = (struct cam_cmd_buf_desc *)(offset);
-		i2c_reg_settings = &(o_ctrl->i2c_time_data);
-		i2c_reg_settings->is_settings_valid = 1;
-		i2c_reg_settings->request_id = 0;
-		rc = cam_sensor_i2c_command_parser(&o_ctrl->io_master_info,
-			i2c_reg_settings,
-			cmd_desc, 1, NULL);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS, "OIS pkt parsing failed: %d", rc);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-
-		rc = cam_ois_update_time(i2c_reg_settings);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS, "Cannot update time");
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-
-		rc = cam_ois_apply_settings(o_ctrl, i2c_reg_settings);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS, "Cannot apply mode settings");
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
-			return rc;
-		}
-
-		rc = delete_request(i2c_reg_settings);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS,
-				"Fail deleting Mode data: rc: %d", rc);
-			cam_mem_put_cpu_buf(dev_config.packet_handle);
 			return rc;
 		}
 		break;
@@ -953,16 +724,12 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 	default:
 		CAM_ERR(CAM_OIS, "Invalid Opcode: %d",
 			(csl_packet->header.op_code & 0xFFFFFF));
-		cam_mem_put_cpu_buf(dev_config.packet_handle);
 		return -EINVAL;
 	}
 
-	if (!rc) {
-		cam_mem_put_cpu_buf(dev_config.packet_handle);
+	if (!rc)
 		return rc;
-	}
 pwr_dwn:
-	cam_mem_put_cpu_buf(dev_config.packet_handle);
 	cam_ois_power_down(o_ctrl);
 	return rc;
 }
@@ -981,6 +748,7 @@ void cam_ois_shutdown(struct cam_ois_ctrl_t *o_ctrl)
 		rc = cam_ois_power_down(o_ctrl);
 		if (rc < 0)
 			CAM_ERR(CAM_OIS, "OIS Power down failed");
+		o_ctrl->cam_ois_state = CAM_OIS_ACQUIRE;
 	}
 
 	if (o_ctrl->cam_ois_state >= CAM_OIS_ACQUIRE) {
@@ -991,9 +759,6 @@ void cam_ois_shutdown(struct cam_ois_ctrl_t *o_ctrl)
 		o_ctrl->bridge_intf.link_hdl = -1;
 		o_ctrl->bridge_intf.session_hdl = -1;
 	}
-
-	if (o_ctrl->i2c_fwinit_data.is_settings_valid == 1)
-		delete_request(&o_ctrl->i2c_fwinit_data);
 
 	if (o_ctrl->i2c_mode_data.is_settings_valid == 1)
 		delete_request(&o_ctrl->i2c_mode_data);
@@ -1130,9 +895,6 @@ int cam_ois_driver_cmd(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 
 		if (o_ctrl->i2c_init_data.is_settings_valid == 1)
 			delete_request(&o_ctrl->i2c_init_data);
-
-		if (o_ctrl->i2c_fwinit_data.is_settings_valid == 1)
-			delete_request(&o_ctrl->i2c_fwinit_data);
 
 		break;
 	case CAM_STOP_DEV:

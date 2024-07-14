@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -37,7 +36,6 @@ struct cam_vfe_mux_camif_lite_data {
 		evt_payload[CAM_VFE_CAMIF_LITE_EVT_MAX];
 	struct list_head                      free_payload_list;
 	spinlock_t                            spin_lock;
-	struct timespec64                     error_ts;
 };
 
 static int cam_vfe_camif_lite_get_evt_payload(
@@ -116,7 +114,10 @@ static int cam_vfe_camif_lite_err_irq_top_half(
 			th_payload->evt_status_arr[1]);
 		CAM_ERR(CAM_ISP, "Stopping further IRQ processing from VFE:%d",
 			camif_lite_node->hw_intf->hw_idx);
-		cam_irq_controller_disable_all(
+		cam_irq_controller_disable_irq(
+			camif_lite_priv->vfe_irq_controller,
+			camif_lite_priv->irq_err_handle);
+		cam_irq_controller_clear_and_mask(evt_id,
 			camif_lite_priv->vfe_irq_controller);
 		error_flag = true;
 	}
@@ -132,12 +133,6 @@ static int cam_vfe_camif_lite_err_irq_top_half(
 	}
 
 	cam_isp_hw_get_timestamp(&evt_payload->ts);
-	if (error_flag) {
-		camif_lite_priv->error_ts.tv_sec =
-			evt_payload->ts.mono_time.tv_sec;
-		camif_lite_priv->error_ts.tv_nsec =
-			evt_payload->ts.mono_time.tv_nsec;
-	}
 
 	for (i = 0; i < th_payload->num_registers; i++)
 		evt_payload->irq_reg_val[i] = th_payload->evt_status_arr[i];
@@ -298,17 +293,13 @@ static int cam_vfe_camif_lite_resource_start(
 			cam_vfe_camif_lite_err_irq_top_half,
 			camif_lite_res->bottom_half_handler,
 			camif_lite_res->tasklet_info,
-			&tasklet_bh_api,
-			CAM_IRQ_EVT_GROUP_0);
+			&tasklet_bh_api);
 		if (rsrc_data->irq_err_handle < 1) {
 			CAM_ERR(CAM_ISP, "Error IRQ handle subscribe failure");
 			rc = -ENOMEM;
 			rsrc_data->irq_err_handle = 0;
 		}
 	}
-
-	rsrc_data->error_ts.tv_sec = 0;
-	rsrc_data->error_ts.tv_nsec = 0;
 
 	CAM_DBG(CAM_ISP, "Start Camif Lite IFE %d Done",
 		camif_lite_res->hw_intf->hw_idx);
@@ -370,9 +361,6 @@ static int cam_vfe_camif_lite_process_cmd(
 		break;
 	case CAM_ISP_HW_CMD_SET_CAMIF_DEBUG:
 		break;
-	case CAM_ISP_HW_CMD_BLANKING_UPDATE:
-		rc = 0;
-		break;
 	default:
 		CAM_ERR(CAM_ISP,
 			"unsupported process command:%d", cmd_type);
@@ -417,73 +405,6 @@ static int cam_vfe_camif_lite_handle_irq_top_half(uint32_t evt_id,
 	return rc;
 }
 
-static int cam_vfe_camif_lite_cpas_fifo_levels_reg_dump(
-	struct cam_vfe_mux_camif_lite_data *camif_lite_priv)
-{
-	int rc = 0;
-	struct cam_vfe_soc_private *soc_private =
-		camif_lite_priv->soc_info->soc_private;
-	uint32_t  val;
-
-	if (soc_private->cpas_version == CAM_CPAS_TITAN_175_V120 ||
-		soc_private->cpas_version == CAM_CPAS_TITAN_175_V130 ||
-		soc_private->cpas_version == CAM_CPAS_TITAN_165_V100) {
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x3A20, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE0_nRDI_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE0_nRDI_MAXWR_LOW offset 0x3A20 val 0x%x",
-			val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x5420, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE1_nRDI_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE1_nRDI_MAXWR_LOW offset 0x5420 val 0x%x",
-			val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x3620, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE0123_RDI_WR_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP,
-			"IFE0123_RDI_WR_MAXWR_LOW offset 0x3620 val 0x%x", val);
-
-	} else if (soc_private->cpas_version < CAM_CPAS_TITAN_175_V120) {
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x420, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP, "IFE02_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE02_MAXWR_LOW offset 0x420 val 0x%x", val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x820, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP, "IFE13_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE13_MAXWR_LOW offset 0x820 val 0x%x", val);
-	}
-
-	return 0;
-}
-
 static int cam_vfe_camif_lite_handle_irq_bottom_half(
 	void                                 *handler_priv,
 	void                                 *evt_payload_priv)
@@ -495,10 +416,6 @@ static int cam_vfe_camif_lite_handle_irq_bottom_half(
 	struct cam_isp_hw_event_info          evt_info;
 	uint32_t                              irq_status0;
 	uint32_t                              irq_status1;
-	struct cam_hw_soc_info               *soc_info = NULL;
-	struct cam_vfe_soc_private           *soc_private = NULL;
-	struct cam_isp_hw_error_event_info    err_evt_info;
-	struct timespec64                     ts;
 
 	if (!handler_priv || !evt_payload_priv) {
 		CAM_ERR(CAM_ISP, "Invalid params");
@@ -510,11 +427,7 @@ static int cam_vfe_camif_lite_handle_irq_bottom_half(
 	payload = evt_payload_priv;
 	irq_status0 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS0];
 	irq_status1 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS1];
-	soc_info = camif_lite_priv->soc_info;
-	soc_private =
-		(struct cam_vfe_soc_private *)soc_info->soc_private;
 
-	evt_info.hw_type  = CAM_ISP_HW_TYPE_VFE;
 	evt_info.hw_idx   = camif_lite_node->hw_intf->hw_idx;
 	evt_info.res_id   = camif_lite_node->res_id;
 	evt_info.res_type = camif_lite_node->res_type;
@@ -551,29 +464,11 @@ static int cam_vfe_camif_lite_handle_irq_bottom_half(
 		CAM_DBG(CAM_ISP, "VFE:%d CAMIF LITE Received ERROR",
 			evt_info.hw_idx);
 
-		err_evt_info.err_type = CAM_VFE_IRQ_STATUS_OVERFLOW;
-		evt_info.event_data = (void *)&err_evt_info;
-		cam_vfe_camif_lite_cpas_fifo_levels_reg_dump(camif_lite_priv);
-
-		ktime_get_boottime_ts64(&ts);
-		CAM_INFO(CAM_ISP,
-			"current monotonic time stamp seconds %lld:%lld",
-			ts.tv_sec, ts.tv_nsec);
-		CAM_INFO(CAM_ISP,
-			"ERROR time %lld:%lld",
-			camif_lite_priv->error_ts.tv_sec,
-			camif_lite_priv->error_ts.tv_nsec);
-		CAM_INFO(CAM_ISP, "ife_clk_src:%lld",
-			soc_private->ife_clk_src);
-
 		if (camif_lite_priv->event_cb)
 			camif_lite_priv->event_cb(camif_lite_priv->priv,
 				CAM_ISP_HW_EVENT_ERROR, (void *)&evt_info);
 
 		ret = CAM_VFE_IRQ_STATUS_OVERFLOW;
-
-		cam_cpas_log_votes(false);
-
 	}
 
 	cam_vfe_camif_lite_put_evt_payload(camif_lite_priv, &payload);

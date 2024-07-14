@@ -61,8 +61,8 @@
 #define CLK_HW_MAX                 0x1
 
 #define OPE_DEVICE_IDLE_TIMEOUT    400
-#define OPE_REQUEST_RT_TIMEOUT        200
-#define OPE_REQUEST_NRT_TIMEOUT        400
+#define OPE_REQUEST_RT_TIMEOUT        300
+#define OPE_REQUEST_NRT_TIMEOUT        500
 
 /**
  * struct cam_ope_clk_bw_request_v2
@@ -79,7 +79,7 @@ struct cam_ope_clk_bw_req_internal_v2 {
 	uint32_t rt_flag;
 	uint32_t reserved;
 	uint32_t num_paths;
-	struct cam_cpas_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
+	struct cam_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
 };
 
 /**
@@ -119,7 +119,7 @@ struct cam_ctx_clk_info {
 	uint64_t compressed_bw;
 	int32_t clk_rate[CAM_MAX_VOTE];
 	uint32_t num_paths;
-	struct cam_cpas_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
+	struct cam_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
 };
 
 /**
@@ -156,7 +156,7 @@ struct cam_ope_clk_info {
 	uint64_t uncompressed_bw;
 	uint64_t compressed_bw;
 	uint32_t num_paths;
-	struct cam_cpas_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
+	struct cam_axi_per_path_bw_vote axi_path[CAM_OPE_MAX_PER_PATH_VOTES];
 	uint32_t hw_type;
 	struct cam_req_mgr_timer *watch_dog;
 	uint32_t watch_dog_reset_counter;
@@ -407,12 +407,11 @@ struct cam_ope_request {
 	uint8_t num_stripe_cmd_bufs[OPE_MAX_BATCH_SIZE][OPE_MAX_STRIPES];
 	struct ope_kmd_buffer ope_kmd_buf;
 	struct ope_debug_buffer ope_debug_buf;
-	struct cam_kmd_buf_info genirq_buff_info;
 	struct ope_io_buf *io_buf[OPE_MAX_BATCH_SIZE][OPE_MAX_IO_BUFS];
 	struct cam_cdm_bl_request *cdm_cmd;
 	struct cam_ope_clk_bw_request clk_info;
 	struct cam_ope_clk_bw_req_internal_v2 clk_info_v2;
-	struct cam_hw_mgr_pf_request_info hang_data;
+	struct cam_hw_mgr_dump_pf_data hang_data;
 	ktime_t submit_timestamp;
 };
 
@@ -473,59 +472,40 @@ struct cam_ope_ctx {
 	struct cam_req_mgr_timer *clk_watch_dog;
 	uint32_t clk_watch_dog_reset_counter;
 	uint64_t last_flush_req;
-	bool pf_mid_found;
 	uint64_t req_timer_timeout;
-};
-
-/**
- * struct cam_ope_hw_intf_data - OPE hw intf data
- *
- * @Brief:        ope hw intf pointer and pid list data
- *
- * @devices:      ope hw intf pointer
- * @num_devices:  Number of OPE devices
- * @num_hw_pid:   Number of pids for this hw
- * @hw_pid:       ope hw pid values
- *
- */
-struct cam_ope_hw_intf_data {
-	struct cam_hw_intf  *hw_intf;
-	uint32_t             num_hw_pid;
-	uint32_t             hw_pid[OPE_DEV_MAX];
 };
 
 /**
  * struct cam_ope_hw_mgr
  *
- * @open_cnt:             OPE device open count
- * @ope_ctx_cnt:          Open context count
- * @hw_mgr_mutex:         Mutex for HW manager
- * @hw_mgr_lock:          Spinlock for HW manager
- * @hfi_en:               Flag for HFI
- * @iommu_hdl:            OPE Handle
- * @iommu_sec_hdl:        OPE Handle for secure
- * @iommu_cdm_hdl:        CDM Handle
- * @iommu_sec_cdm_hdl:    CDM Handle for secure
- * @num_ope:              Number of OPE
- * @secure_mode:          Mode of OPE operation
- * @ctx_bitmap:           Context bit map
- * @ctx_bitmap_size:      Context bit map size
- * @ctx_bits:             Context bit map bits
- * @ctx:                  OPE context
- * @devices:              OPE devices
- * @ope_dev_data:         OPE device specific data
- * @ope_caps:             OPE capabilities
- * @cmd_work:             Command work
- * @msg_work:             Message work
- * @timer_work:           Timer work
- * @cmd_work_data:        Command work data
- * @msg_work_data:        Message work data
- * @timer_work_data:      Timer work data
- * @ope_dev_intf:         OPE device interface
- * @cdm_reg_map:          OPE CDM register map
- * @clk_info:             OPE clock Info for HW manager
- * @dentry:               Pointer to OPE debugfs directory
- * @frame_dump_enable:    OPE frame setting dump enablement
+ * @open_cnt:          OPE device open count
+ * @ope_ctx_cnt:       Open context count
+ * @hw_mgr_mutex:      Mutex for HW manager
+ * @hw_mgr_lock:       Spinlock for HW manager
+ * @hfi_en:            Flag for HFI
+ * @iommu_hdl:         OPE Handle
+ * @iommu_sec_hdl:     OPE Handle for secure
+ * @iommu_cdm_hdl:     CDM Handle
+ * @iommu_sec_cdm_hdl: CDM Handle for secure
+ * @num_ope:           Number of OPE
+ * @secure_mode:       Mode of OPE operation
+ * @ctx_bitmap:        Context bit map
+ * @ctx_bitmap_size:   Context bit map size
+ * @ctx_bits:          Context bit map bits
+ * @ctx:               OPE context
+ * @devices:           OPE devices
+ * @ope_caps:          OPE capabilities
+ * @cmd_work:          Command work
+ * @msg_work:          Message work
+ * @timer_work:        Timer work
+ * @cmd_work_data:     Command work data
+ * @msg_work_data:     Message work data
+ * @timer_work_data:   Timer work data
+ * @ope_dev_intf:      OPE device interface
+ * @cdm_reg_map:       OPE CDM register map
+ * @clk_info:          OPE clock Info for HW manager
+ * @dentry:            Pointer to OPE debugfs directory
+ * @frame_dump_enable: OPE frame setting dump enablement
  * @dump_req_data_enable: OPE hang dump enablement
  */
 struct cam_ope_hw_mgr {
@@ -544,8 +524,7 @@ struct cam_ope_hw_mgr {
 	size_t ctx_bitmap_size;
 	size_t ctx_bits;
 	struct cam_ope_ctx  ctx[OPE_CTX_MAX];
-	struct cam_hw_intf **devices[OPE_DEV_MAX];
-	struct cam_ope_hw_intf_data *ope_dev_data[OPE_DEV_MAX];
+	struct cam_hw_intf  **devices[OPE_DEV_MAX];
 	struct ope_query_cap_cmd ope_caps;
 	uint64_t last_callback_time;
 

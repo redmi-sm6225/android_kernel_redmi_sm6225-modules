@@ -221,6 +221,4 @@ int cam_lrme_hw_init_module(void);
  * @brief : API to remove LRME Hw from platform framework.
  */
 void cam_lrme_hw_exit_module(void);
-
 #endif /* _CAM_LRME_HW_INTF_H_ */
-

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_TFE_HW_INTF_H_
@@ -10,7 +9,7 @@
 #include "cam_isp_hw.h"
 #include "cam_cpas_api.h"
 
-#define CAM_TFE_HW_NUM_MAX            4
+#define CAM_TFE_HW_NUM_MAX            3
 #define TFE_CORE_BASE_IDX             0
 
 
@@ -19,7 +18,6 @@ enum cam_isp_hw_tfe_in {
 	CAM_ISP_HW_TFE_IN_RDI0        = 1,
 	CAM_ISP_HW_TFE_IN_RDI1        = 2,
 	CAM_ISP_HW_TFE_IN_RDI2        = 3,
-	CAM_ISP_HW_TFE_IN_PDLIB       = 4,
 	CAM_ISP_HW_TFE_IN_MAX,
 };
 
@@ -36,7 +34,6 @@ enum cam_tfe_hw_irq_status {
 	CAM_TFE_IRQ_STATUS_OVERFLOW,
 	CAM_TFE_IRQ_STATUS_P2I_ERROR,
 	CAM_TFE_IRQ_STATUS_VIOLATION,
-	CAM_TFE_IRQ_STATUS_OUT_OF_SYNC,
 	CAM_TFE_IRQ_STATUS_MAX,
 };
 
@@ -97,14 +94,14 @@ struct cam_tfe_hw_get_hw_cap {
  * @ctx:                     Context data
  */
 struct cam_tfe_hw_tfe_out_acquire_args {
-	struct cam_isp_resource_node             *rsrc_node;
-	struct cam_isp_tfe_out_port_generic_info *out_port_info;
-	uint32_t                                  unique_id;
-	uint32_t                                  is_dual;
-	enum cam_isp_hw_split_id                  split_id;
-	uint32_t                                  is_master;
-	struct cam_cdm_utils_ops                 *cdm_ops;
-	void                                     *ctx;
+	struct cam_isp_resource_node      *rsrc_node;
+	struct cam_isp_tfe_out_port_info  *out_port_info;
+	uint32_t                           unique_id;
+	uint32_t                           is_dual;
+	enum cam_isp_hw_split_id           split_id;
+	uint32_t                           is_master;
+	struct cam_cdm_utils_ops          *cdm_ops;
+	void                              *ctx;
 };
 
 /*
@@ -120,17 +117,15 @@ struct cam_tfe_hw_tfe_out_acquire_args {
  * @in_port:                 Input port details to acquire
  * @camif_pd_enable          Camif pd enable or disable
  * @dual_tfe_sync_sel_idx    Dual tfe master hardware index
- * @lcr_enable               LCR enable field
  */
 struct cam_tfe_hw_tfe_in_acquire_args {
-	struct cam_isp_resource_node            *rsrc_node;
-	struct cam_isp_tfe_in_port_generic_info *in_port;
-	uint32_t                                 res_id;
-	void                                    *cdm_ops;
-	enum cam_isp_hw_sync_mode                sync_mode;
-	bool                                     camif_pd_enable;
-	uint32_t                                 dual_tfe_sync_sel_idx;
-	bool                                     lcr_enable;
+	struct cam_isp_resource_node         *rsrc_node;
+	struct cam_isp_tfe_in_port_info      *in_port;
+	uint32_t                              res_id;
+	void                                 *cdm_ops;
+	enum cam_isp_hw_sync_mode             sync_mode;
+	bool                                  camif_pd_enable;
+	uint32_t                              dual_tfe_sync_sel_idx;
 };
 
 /*
@@ -245,24 +240,6 @@ struct cam_tfe_irq_evt_payload {
 };
 
 /*
- * cam_tfe_get_num_tfe_hws()
- *
- * @brief:         Gets number of TFEs
- *
- * @num_tfes:      Fills number of TFES in the address passed
- */
-void cam_tfe_get_num_tfe_hws(uint32_t *num_tfes);
-
-/*
- * cam_tfe_get_num_tfe_lite_hws()
- *
- * @brief:         Gets number of TFE-LITEs
- *
- * @num_tfe_lites: Fills number of TFE-LITEs in the address passed
- */
-void cam_tfe_get_num_tfe_lite_hws(uint32_t *num_tfe_lites);
-
-/*
  * cam_tfe_hw_init()
  *
  * @Brief:                  Initialize TFE HW device
@@ -271,6 +248,6 @@ void cam_tfe_get_num_tfe_lite_hws(uint32_t *num_tfe_lites);
  *                          successful initialization
  * @hw_idx:                 Index of TFE HW
  */
-int cam_tfe_hw_init(struct cam_isp_hw_intf_data **tfe_hw, uint32_t hw_idx);
+int cam_tfe_hw_init(struct cam_hw_intf **tfe_hw, uint32_t hw_idx);
 
 #endif /* _CAM_TFE_HW_INTF_H_ */

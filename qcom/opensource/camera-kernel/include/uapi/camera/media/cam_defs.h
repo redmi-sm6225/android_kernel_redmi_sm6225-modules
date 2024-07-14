@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __UAPI_CAM_DEFS_H__
@@ -21,8 +21,7 @@
 #define CAM_RELEASE_DEV                         (CAM_COMMON_OPCODE_BASE + 0x6)
 #define CAM_SD_SHUTDOWN                         (CAM_COMMON_OPCODE_BASE + 0x7)
 #define CAM_FLUSH_REQ                           (CAM_COMMON_OPCODE_BASE + 0x8)
-#define CAM_QUERY_CAP_V2                        (CAM_COMMON_OPCODE_BASE + 0x9)
-#define CAM_COMMON_OPCODE_MAX                   (CAM_COMMON_OPCODE_BASE + 0xa)
+#define CAM_COMMON_OPCODE_MAX                   (CAM_COMMON_OPCODE_BASE + 0x9)
 
 #define CAM_COMMON_OPCODE_BASE_v2           0x150
 #define CAM_ACQUIRE_HW                      (CAM_COMMON_OPCODE_BASE_v2 + 0x1)
@@ -86,11 +85,11 @@ enum flush_type_t {
  * @handle:             Control command payload
  */
 struct cam_control {
-	__u32        op_code;
-	__u32        size;
-	__u32        handle_type;
-	__u32        reserved;
-	__u64        handle;
+	uint32_t        op_code;
+	uint32_t        size;
+	uint32_t        handle_type;
+	uint32_t        reserved;
+	uint64_t        handle;
 };
 
 /* camera IOCTL */
@@ -106,10 +105,10 @@ struct cam_control {
  * @reserved : Reserved for 64 bit aligngment
  */
 struct cam_hw_version {
-	__u32 major;
-	__u32 minor;
-	__u32 incr;
-	__u32 reserved;
+	uint32_t major;
+	uint32_t minor;
+	uint32_t incr;
+	uint32_t reserved;
 };
 
 /**
@@ -120,8 +119,8 @@ struct cam_hw_version {
  *
  */
 struct cam_iommu_handle {
-	__s32 non_secure;
-	__s32 secure;
+	int32_t non_secure;
+	int32_t secure;
 };
 
 /* camera secure mode */
@@ -178,9 +177,7 @@ struct cam_iommu_handle {
 #define CAM_FORMAT_DPCM_12_10_12                46
 #define CAM_FORMAT_PLAIN32                      47
 #define CAM_FORMAT_ARGB_16                      48
-#define CAM_FORMAT_PLAIN16_10_LSB               49
-#define CAM_FORMAT_YUV422_10                    50
-#define CAM_FORMAT_MAX                          51
+#define CAM_FORMAT_MAX                          49
 
 /* Pixel Patterns */
 #define PIXEL_PATTERN_RGRGRG                    0x0
@@ -239,11 +236,6 @@ struct cam_iommu_handle {
 #define CAM_REG_DUMP_BASE_TYPE_ISP_LEFT         1
 #define CAM_REG_DUMP_BASE_TYPE_ISP_RIGHT        2
 #define CAM_REG_DUMP_BASE_TYPE_CAMNOC           3
-#define CAM_REG_DUMP_BASE_TYPE_CSID_WRAPPER     4
-#define CAM_REG_DUMP_BASE_TYPE_CSID_LEFT        5
-#define CAM_REG_DUMP_BASE_TYPE_CSID_RIGHT       6
-#define CAM_REG_DUMP_BASE_TYPE_SFE_LEFT         7
-#define CAM_REG_DUMP_BASE_TYPE_SFE_RIGHT        8
 
 /* Register dump read type */
 #define CAM_REG_DUMP_READ_TYPE_CONT_RANGE       1
@@ -274,18 +266,18 @@ struct cam_iommu_handle {
  *
  */
 struct cam_plane_cfg {
-	__u32                width;
-	__u32                height;
-	__u32                plane_stride;
-	__u32                slice_height;
-	__u32                meta_stride;
-	__u32                meta_size;
-	__u32                meta_offset;
-	__u32                packer_config;
-	__u32                mode_config;
-	__u32                tile_config;
-	__u32                h_init;
-	__u32                v_init;
+	uint32_t                width;
+	uint32_t                height;
+	uint32_t                plane_stride;
+	uint32_t                slice_height;
+	uint32_t                meta_stride;
+	uint32_t                meta_size;
+	uint32_t                meta_offset;
+	uint32_t                packer_config;
+	uint32_t                mode_config;
+	uint32_t                tile_config;
+	uint32_t                h_init;
+	uint32_t                v_init;
 };
 
 /**
@@ -304,16 +296,16 @@ struct cam_plane_cfg {
  *
  */
 struct cam_ubwc_plane_cfg_v1 {
-	__u32                port_type;
-	__u32                meta_stride;
-	__u32                meta_size;
-	__u32                meta_offset;
-	__u32                packer_config;
-	__u32                mode_config_0;
-	__u32                mode_config_1;
-	__u32                tile_config;
-	__u32                h_init;
-	__u32                v_init;
+	uint32_t                port_type;
+	uint32_t                meta_stride;
+	uint32_t                meta_size;
+	uint32_t                meta_offset;
+	uint32_t                packer_config;
+	uint32_t                mode_config_0;
+	uint32_t                mode_config_1;
+	uint32_t                tile_config;
+	uint32_t                h_init;
+	uint32_t                v_init;
 };
 
 /**
@@ -334,31 +326,27 @@ struct cam_ubwc_plane_cfg_v1 {
  * @lossy_threshold0            UBWC lossy threshold 0
  * @lossy_threshold1            UBWC lossy threshold 1
  * @lossy_var_offset            UBWC offset variance thrshold
- * @bandwidth_limit:            BW counter limit
- *                              BW limiter config skipped if value is 0xFFFF or more
- *                              If skipped here, use generic BW limiter blob to
- *                              configure the appropriate value.
  *
  */
 struct cam_ubwc_plane_cfg_v2 {
-	__u32                port_type;
-	__u32                meta_stride;
-	__u32                meta_size;
-	__u32                meta_offset;
-	__u32                packer_config;
-	__u32                mode_config_0;
-	__u32                mode_config_1;
-	__u32                tile_config;
-	__u32                h_init;
-	__u32                v_init;
-	__u32                static_ctrl;
-	__u32                ctrl_2;
-	__u32                stats_ctrl_2;
-	__u32                lossy_threshold_0;
-	__u32                lossy_threshold_1;
-	__u32                lossy_var_offset;
-	__u32                bandwidth_limit;
-	__u32                reserved[3];
+	uint32_t                port_type;
+	uint32_t                meta_stride;
+	uint32_t                meta_size;
+	uint32_t                meta_offset;
+	uint32_t                packer_config;
+	uint32_t                mode_config_0;
+	uint32_t                mode_config_1;
+	uint32_t                tile_config;
+	uint32_t                h_init;
+	uint32_t                v_init;
+	uint32_t                static_ctrl;
+	uint32_t                ctrl_2;
+	uint32_t                stats_ctrl_2;
+	uint32_t                lossy_threshold_0;
+	uint32_t                lossy_threshold_1;
+	uint32_t                lossy_var_offset;
+	uint32_t                bandwidth_limit;
+	uint32_t                reserved[3];
 };
 /**
  * struct cam_cmd_buf_desc - Command buffer descriptor
@@ -373,12 +361,12 @@ struct cam_ubwc_plane_cfg_v2 {
  *
  */
 struct cam_cmd_buf_desc {
-	__s32                mem_handle;
-	__u32                offset;
-	__u32                size;
-	__u32                length;
-	__u32                type;
-	__u32                meta_data;
+	int32_t                 mem_handle;
+	uint32_t                offset;
+	uint32_t                size;
+	uint32_t                length;
+	uint32_t                type;
+	uint32_t                meta_data;
 };
 
 /**
@@ -415,26 +403,26 @@ struct cam_cmd_buf_desc {
  *
  */
 struct cam_buf_io_cfg {
-	__s32                   mem_handle[CAM_PACKET_MAX_PLANES];
-	__u32                   offsets[CAM_PACKET_MAX_PLANES];
-	struct cam_plane_cfg    planes[CAM_PACKET_MAX_PLANES];
-	__u32                   format;
-	__u32                   color_space;
-	__u32                   color_pattern;
-	__u32                   bpp;
-	__u32                   rotation;
-	__u32                   resource_type;
-	__s32                   fence;
-	__s32                   early_fence;
-	struct cam_cmd_buf_desc aux_cmd_buf;
-	__u32                   direction;
-	__u32                   batch_size;
-	__u32                   subsample_pattern;
-	__u32                   subsample_period;
-	__u32                   framedrop_pattern;
-	__u32                   framedrop_period;
-	__u32                   flag;
-	__u32                   padding;
+	int32_t                         mem_handle[CAM_PACKET_MAX_PLANES];
+	uint32_t                        offsets[CAM_PACKET_MAX_PLANES];
+	struct cam_plane_cfg            planes[CAM_PACKET_MAX_PLANES];
+	uint32_t                        format;
+	uint32_t                        color_space;
+	uint32_t                        color_pattern;
+	uint32_t                        bpp;
+	uint32_t                        rotation;
+	uint32_t                        resource_type;
+	int32_t                         fence;
+	int32_t                         early_fence;
+	struct cam_cmd_buf_desc         aux_cmd_buf;
+	uint32_t                        direction;
+	uint32_t                        batch_size;
+	uint32_t                        subsample_pattern;
+	uint32_t                        subsample_period;
+	uint32_t                        framedrop_pattern;
+	uint32_t                        framedrop_period;
+	uint32_t                        flag;
+	uint32_t                        padding;
 };
 
 /**
@@ -448,11 +436,11 @@ struct cam_buf_io_cfg {
  *
  */
 struct cam_packet_header {
-	__u32                op_code;
-	__u32                size;
-	__u64                request_id;
-	__u32                flags;
-	__u32                padding;
+	uint32_t                op_code;
+	uint32_t                size;
+	uint64_t                request_id;
+	uint32_t                flags;
+	uint32_t                padding;
 };
 
 /**
@@ -465,10 +453,10 @@ struct cam_packet_header {
  *
  */
 struct cam_patch_desc {
-	__s32                dst_buf_hdl;
-	__u32                dst_offset;
-	__s32                src_buf_hdl;
-	__u32                src_offset;
+	int32_t                 dst_buf_hdl;
+	uint32_t                dst_offset;
+	int32_t                 src_buf_hdl;
+	uint32_t                src_offset;
 };
 
 /**
@@ -489,16 +477,16 @@ struct cam_patch_desc {
  *
  */
 struct cam_packet {
-	struct cam_packet_header     header;
-	__u32                        cmd_buf_offset;
-	__u32                        num_cmd_buf;
-	__u32                        io_configs_offset;
-	__u32                        num_io_configs;
-	__u32                        patch_offset;
-	__u32                        num_patches;
-	__u32                        kmd_cmd_buf_index;
-	__u32                        kmd_cmd_buf_offset;
-	__u64                        payload[1];
+	struct cam_packet_header        header;
+	uint32_t                        cmd_buf_offset;
+	uint32_t                        num_cmd_buf;
+	uint32_t                        io_configs_offset;
+	uint32_t                        num_io_configs;
+	uint32_t                        patch_offset;
+	uint32_t                        num_patches;
+	uint32_t                        kmd_cmd_buf_index;
+	uint32_t                        kmd_cmd_buf_offset;
+	uint64_t                        payload[1];
 
 };
 
@@ -509,8 +497,8 @@ struct cam_packet {
  * @dev_handle:                 Device handle for the release
  */
 struct cam_release_dev_cmd {
-	__s32                 session_handle;
-	__s32                 dev_handle;
+	int32_t                 session_handle;
+	int32_t                 dev_handle;
 };
 
 /**
@@ -521,8 +509,8 @@ struct cam_release_dev_cmd {
  *
  */
 struct cam_start_stop_dev_cmd {
-	__s32                 session_handle;
-	__s32                 dev_handle;
+	int32_t                 session_handle;
+	int32_t                 dev_handle;
 };
 
 /**
@@ -536,10 +524,10 @@ struct cam_start_stop_dev_cmd {
  *
  */
 struct cam_config_dev_cmd {
-	__s32                session_handle;
-	__s32                dev_handle;
-	__u64                offset;
-	__u64                packet_handle;
+	int32_t                 session_handle;
+	int32_t                 dev_handle;
+	uint64_t                offset;
+	uint64_t                packet_handle;
 };
 
 /**
@@ -551,9 +539,9 @@ struct cam_config_dev_cmd {
  *
  */
 struct cam_query_cap_cmd {
-	__u32        size;
-	__u32        handle_type;
-	__u64        caps_handle;
+	uint32_t        size;
+	uint32_t        handle_type;
+	uint64_t        caps_handle;
 };
 
 /**
@@ -570,11 +558,11 @@ struct cam_query_cap_cmd {
  *
  */
 struct cam_acquire_dev_cmd {
-	__s32        session_handle;
-	__s32        dev_handle;
-	__u32        handle_type;
-	__u32        num_resources;
-	__u64        resource_hdl;
+	int32_t         session_handle;
+	int32_t         dev_handle;
+	uint32_t        handle_type;
+	uint32_t        num_resources;
+	uint64_t        resource_hdl;
 };
 
 /*
@@ -587,7 +575,7 @@ struct cam_acquire_dev_cmd {
  * ACQUIRE_HW IOCTL after ACQUIRE_DEV and that is when the HW
  * is associated with the dev_handle.
  *
- * (Data type): __u32
+ * (Data type): uint32_t
  */
 #define CAM_API_COMPAT_CONSTANT                   0xFEFEFEFE
 
@@ -614,13 +602,13 @@ struct cam_acquire_dev_cmd {
  *                      resource data.
  */
 struct cam_acquire_hw_cmd_v1 {
-	__u32        struct_version;
-	__u32        reserved;
-	__s32        session_handle;
-	__s32        dev_handle;
-	__u32        handle_type;
-	__u32        data_size;
-	__u64        resource_hdl;
+	uint32_t        struct_version;
+	uint32_t        reserved;
+	int32_t         session_handle;
+	int32_t         dev_handle;
+	uint32_t        handle_type;
+	uint32_t        data_size;
+	uint64_t        resource_hdl;
 };
 
 /**
@@ -633,9 +621,9 @@ struct cam_acquire_hw_cmd_v1 {
  * valid_acquired_hw:   Valid num of acquired hardware
  */
 struct cam_acquired_hw_info {
-	__u32    acquired_hw_id[CAM_MAX_ACQ_RES];
-	__u32    acquired_hw_path[CAM_MAX_ACQ_RES][CAM_MAX_HW_SPLIT];
-	__u32    valid_acquired_hw;
+	uint32_t    acquired_hw_id[CAM_MAX_ACQ_RES];
+	uint32_t    acquired_hw_path[CAM_MAX_ACQ_RES][CAM_MAX_HW_SPLIT];
+	uint32_t    valid_acquired_hw;
 };
 
 /**
@@ -658,13 +646,13 @@ struct cam_acquired_hw_info {
  *                      resource data.
  */
 struct cam_acquire_hw_cmd_v2 {
-	__u32                    struct_version;
-	__u32                    reserved;
-	__s32                    session_handle;
-	__s32                    dev_handle;
-	__u32                    handle_type;
-	__u32                    data_size;
-	__u64                    resource_hdl;
+	uint32_t                    struct_version;
+	uint32_t                    reserved;
+	int32_t                     session_handle;
+	int32_t                     dev_handle;
+	uint32_t                    handle_type;
+	uint32_t                    data_size;
+	uint64_t                    resource_hdl;
 	struct cam_acquired_hw_info hw_info;
 };
 
@@ -684,10 +672,10 @@ struct cam_acquire_hw_cmd_v2 {
  * @dev_handle:         Device handle for the release
  */
 struct cam_release_hw_cmd_v1 {
-	__u32                struct_version;
-	__u32                reserved;
-	__s32                session_handle;
-	__s32                dev_handle;
+	uint32_t                struct_version;
+	uint32_t                reserved;
+	int32_t                 session_handle;
+	int32_t                 dev_handle;
 };
 
 /**
@@ -704,12 +692,12 @@ struct cam_release_hw_cmd_v1 {
  *
  */
 struct cam_flush_dev_cmd {
-	__u64       version;
-	__s32       session_handle;
-	__s32       dev_handle;
-	__u32       flush_type;
-	__u32       reserved;
-	__s64       req_id;
+	uint64_t       version;
+	int32_t        session_handle;
+	int32_t        dev_handle;
+	uint32_t       flush_type;
+	uint32_t       reserved;
+	int64_t        req_id;
 };
 
 /**
@@ -724,8 +712,8 @@ struct cam_flush_dev_cmd {
  *
  */
 struct cam_ubwc_config {
-	__u32   api_version;
-	__u32   num_ports;
+	uint32_t   api_version;
+	uint32_t   num_ports;
 	struct cam_ubwc_plane_cfg_v1
 		   ubwc_plane_cfg[1][CAM_PACKET_MAX_PLANES - 1];
 };
@@ -742,8 +730,8 @@ struct cam_ubwc_config {
  *
  */
 struct cam_ubwc_config_v2 {
-	__u32   api_version;
-	__u32   num_ports;
+	uint32_t   api_version;
+	uint32_t   num_ports;
 	struct cam_ubwc_plane_cfg_v2
 	   ubwc_plane_cfg[1][CAM_PACKET_MAX_PLANES - 1];
 };
@@ -758,10 +746,10 @@ struct cam_ubwc_config_v2 {
  * @flags      : Flags if any
  */
 struct cam_cmd_mem_region_info {
-	__s32 mem_handle;
-	__u32 offset;
-	__u32 size;
-	__u32 flags;
+	int32_t   mem_handle;
+	uint32_t  offset;
+	uint32_t  size;
+	uint32_t  flags;
 };
 
 /**
@@ -774,8 +762,8 @@ struct cam_cmd_mem_region_info {
  * @map_info_array : Array of all the regions
  */
 struct cam_cmd_mem_regions {
-	__u32 version;
-	__u32 num_regions;
+	uint32_t version;
+	uint32_t num_regions;
 	struct cam_cmd_mem_region_info map_info_array[1];
 };
 
@@ -786,8 +774,8 @@ struct cam_cmd_mem_regions {
  * @value                : Register value to write
  */
 struct cam_reg_write_desc {
-	__u32 offset;
-	__u32 value;
+	uint32_t   offset;
+	uint32_t   value;
 };
 
 /**
@@ -797,8 +785,8 @@ struct cam_reg_write_desc {
  * @num_values           : Number of values to read
  */
 struct cam_reg_range_read_desc {
-	__u32   offset;
-	__u32   num_values;
+	uint32_t   offset;
+	uint32_t   num_values;
 };
 
 /**
@@ -812,8 +800,8 @@ struct cam_reg_range_read_desc {
  * @post_read_config     : Registers to write after reading DMI data
  */
 struct cam_dmi_read_desc {
-	__u32                         num_pre_writes;
-	__u32                         num_post_writes;
+	uint32_t                         num_pre_writes;
+	uint32_t                         num_post_writes;
 	struct cam_reg_write_desc        pre_read_config[
 						CAM_REG_DUMP_DMI_CONFIG_MAX];
 	struct cam_reg_range_read_desc   dmi_data_read;
@@ -830,11 +818,11 @@ struct cam_dmi_read_desc {
  * @dmi_read             : DMI data to read
  */
 struct cam_reg_read_info {
-	__u32                                  type;
-	__u32                                  reserved;
+	uint32_t                                type;
+	uint32_t                                reserved;
 	union {
-		struct cam_reg_range_read_desc reg_read;
-		struct cam_dmi_read_desc       dmi_read;
+		struct cam_reg_range_read_desc  reg_read;
+		struct cam_dmi_read_desc        dmi_read;
 	};
 };
 
@@ -846,9 +834,9 @@ struct cam_reg_read_info {
  * @dump_data            : Register dump data
  */
 struct cam_reg_dump_out_buffer {
-	__u64   req_id;
-	__u32   bytes_written;
-	__u32   dump_data[1];
+	uint64_t   req_id;
+	uint32_t   bytes_written;
+	uint32_t   dump_data[1];
 };
 
 /**
@@ -862,11 +850,11 @@ struct cam_reg_dump_out_buffer {
  * @read_range           : Read range info
  */
 struct cam_reg_dump_desc {
-	__u32                    reg_base_type;
-	__u32                    dump_buffer_offset;
-	__u32                    dump_buffer_size;
-	__u32                    num_read_range;
-	struct cam_reg_read_info read_range[1];
+	uint32_t                   reg_base_type;
+	uint32_t                   dump_buffer_offset;
+	uint32_t                   dump_buffer_size;
+	uint32_t                   num_read_range;
+	struct cam_reg_read_info   read_range[1];
 };
 
 /**
@@ -877,8 +865,8 @@ struct cam_reg_dump_desc {
  *                         (cam_reg_dump_desc)
  */
 struct cam_reg_dump_input_info {
-	__u32                   num_dump_sets;
-	__u32                   dump_set_offsets[1];
+	uint32_t                   num_dump_sets;
+	uint32_t                   dump_set_offsets[1];
 };
 
 /**
@@ -894,13 +882,13 @@ struct cam_reg_dump_input_info {
  * @dev_handle     : Device Handle
  */
 struct cam_dump_req_cmd {
-	__u64           issue_req_id;
-	__kernel_size_t offset;
-	__u32           buf_handle;
-	__u32           error_type;
-	__s32           session_handle;
-	__s32           link_hdl;
-	__s32           dev_handle;
+	uint64_t       issue_req_id;
+	size_t         offset;
+	uint32_t       buf_handle;
+	uint32_t       error_type;
+	int32_t        session_handle;
+	int32_t        link_hdl;
+	int32_t        dev_handle;
 };
 
 #endif /* __UAPI_CAM_DEFS_H__ */

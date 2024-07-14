@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_TOP_VER3_H_
@@ -17,7 +17,6 @@
 #define CAM_SHIFT_TOP_CORE_CFG_DISP_DS16_R2PD    28
 #define CAM_SHIFT_TOP_CORE_CFG_DISP_DS4_R2PD     27
 #define CAM_SHIFT_TOP_CORE_CFG_DSP_STREAMING     25
-#define CAM_SHIFT_TOP_CORE_CFG_INPUT_PP_FMT      14
 #define CAM_SHIFT_TOP_CORE_CFG_STATS_IHIST       10
 #define CAM_SHIFT_TOP_CORE_CFG_STATS_HDR_BE       9
 #define CAM_SHIFT_TOP_CORE_CFG_STATS_HDR_BHIST    8
@@ -76,7 +75,6 @@ struct cam_vfe_camif_common_cfg {
 	uint32_t     hdr_bhist_src_sel;
 	uint32_t     input_mux_sel_pdaf;
 	uint32_t     input_mux_sel_pp;
-	uint32_t     input_pp_fmt;
 };
 
 struct cam_vfe_top_ver3_hw_info {
@@ -88,9 +86,7 @@ struct cam_vfe_top_ver3_hw_info {
 	struct cam_vfe_camif_lite_ver3_hw_info      lcr_hw_info;
 	struct cam_vfe_fe_ver1_hw_info              fe_hw_info;
 	uint32_t                                    num_mux;
-	uint32_t                                    num_path_port_map;
 	uint32_t mux_type[CAM_VFE_TOP_MUX_MAX];
-	uint32_t path_port_map[CAM_ISP_HW_PATH_PORT_MAP_MAX][2];
 };
 
 int cam_vfe_top_ver3_init(struct cam_hw_soc_info     *soc_info,

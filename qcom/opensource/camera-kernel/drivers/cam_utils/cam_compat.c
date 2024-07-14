@@ -1,118 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/dma-mapping.h>
-#include <linux/dma-buf.h>
 #include <linux/of_address.h>
 #include <linux/slab.h>
-
-#include <soc/qcom/rpmh.h>
 
 #include "cam_compat.h"
 #include "cam_debug_util.h"
 #include "cam_cpas_api.h"
-#include "camera_main.h"
-
-#if KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE
-#include <soc/qcom/socinfo.h>
-#endif
-
-#if IS_ENABLED(CONFIG_USE_RPMH_DRV_API)
-#define CAM_RSC_DRV_IDENTIFIER "cam_rsc"
-
-const struct device *cam_cpas_get_rsc_dev_for_drv(uint32_t index)
-{
-	const struct device *rsc_dev;
-
-	rsc_dev = rpmh_get_device(CAM_RSC_DRV_IDENTIFIER, index);
-	if (!rsc_dev) {
-		CAM_ERR(CAM_CPAS, "Invalid dev for index: %u", index);
-		return NULL;
-	}
-
-	return rsc_dev;
-}
-
-int cam_cpas_start_drv_for_dev(const struct device *dev)
-{
-	int rc = 0;
-
-	if (!dev) {
-		CAM_ERR(CAM_CPAS, "Invalid dev for DRV enable");
-		return -EINVAL;
-	}
-
-	rc = rpmh_drv_start(dev);
-	if (rc) {
-		CAM_ERR(CAM_CPAS, "[%s] Failed in DRV start", dev_name(dev));
-		return rc;
-	}
-
-	return rc;
-}
-
-int cam_cpas_stop_drv_for_dev(const struct device *dev)
-{
-	int rc = 0;
-
-	if (!dev) {
-		CAM_ERR(CAM_CPAS, "Invalid dev for DRV disable");
-		return -EINVAL;
-	}
-
-	rc = rpmh_drv_stop(dev);
-	if (rc) {
-		CAM_ERR(CAM_CPAS, "[%s] Failed in DRV stop", dev_name(dev));
-		return rc;
-	}
-
-	return rc;
-}
-
-int cam_cpas_drv_channel_switch_for_dev(const struct device *dev)
-{
-	int rc = 0;
-
-	if (!dev) {
-		CAM_ERR(CAM_CPAS, "Invalid dev for DRV channel switch");
-		return -EINVAL;
-	}
-
-	rc = rpmh_write_sleep_and_wake_no_child(dev);
-	if (rc) {
-		CAM_ERR(CAM_CPAS, "[%s] Failed in DRV channel switch", dev_name(dev));
-		return rc;
-	}
-
-	return rc;
-}
-
-#else
-const struct device *cam_cpas_get_rsc_dev_for_drv(uint32_t index)
-{
-	return NULL;
-}
-
-int cam_cpas_start_drv_for_dev(const struct device *dev)
-
-{
-	return 0;
-}
-
-int cam_cpas_stop_drv_for_dev(const struct device *dev)
-{
-	return 0;
-}
-
-int cam_cpas_drv_channel_switch_for_dev(const struct device *dev)
-{
-	return 0;
-}
-#endif
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 int cam_reserve_icp_fw(struct cam_fw_alloc_info *icp_fw, size_t fw_length)
@@ -180,16 +77,16 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 {
 	int rc = 0;
 
-	if (offset >= CSIPHY_MAX_INSTANCES_PER_PHY) {
+	if (offset >= CSIPHY_MAX_INSTANCES) {
 		CAM_ERR(CAM_CSIPHY, "Invalid CSIPHY offset");
 		rc = -EINVAL;
 	} else if (qcom_scm_camera_protect_phy_lanes(protect,
-			csiphy_dev->csiphy_info[offset].csiphy_cpas_cp_reg_mask)) {
+			csiphy_dev->csiphy_cpas_cp_reg_mask[offset])) {
 		CAM_ERR(CAM_CSIPHY, "SCM call to hypervisor failed");
 		rc = -EINVAL;
 	}
 
-	return rc;
+	return 0;
 }
 
 void cam_cpastop_scm_write(struct cam_cpas_hw_errata_wa *errata_wa)
@@ -199,16 +96,6 @@ void cam_cpastop_scm_write(struct cam_cpas_hw_errata_wa *errata_wa)
 	qcom_scm_io_readl(errata_wa->data.reg_info.offset, &reg_val);
 	reg_val |= errata_wa->data.reg_info.value;
 	qcom_scm_io_writel(errata_wa->data.reg_info.offset, reg_val);
-}
-
-static int camera_platform_compare_dev(struct device *dev, const void *data)
-{
-	return platform_bus_type.match(dev, (struct device_driver *) data);
-}
-
-static int camera_i2c_compare_dev(struct device *dev, const void *data)
-{
-	return i2c_bus_type.match(dev, (struct device_driver *) data);
 }
 #else
 int cam_reserve_icp_fw(struct cam_fw_alloc_info *icp_fw, size_t fw_length)
@@ -266,11 +153,10 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 	struct scm_desc description = {
 		.arginfo = SCM_ARGS(2, SCM_VAL, SCM_VAL),
 		.args[0] = protect,
-		.args[1] = csiphy_dev->csiphy_info[offset]
-			.csiphy_cpas_cp_reg_mask,
+		.args[1] = csiphy_dev->csiphy_cpas_cp_reg_mask[offset],
 	};
 
-	if (offset >= CSIPHY_MAX_INSTANCES_PER_PHY) {
+	if (offset >= CSIPHY_MAX_INSTANCES) {
 		CAM_ERR(CAM_CSIPHY, "Invalid CSIPHY offset");
 		rc = -EINVAL;
 	} else if (scm_call2(SCM_SIP_FNID(0x18, 0x7), &description)) {
@@ -278,7 +164,7 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 		rc = -EINVAL;
 	}
 
-	return rc;
+	return 0;
 }
 
 void cam_cpastop_scm_write(struct cam_cpas_hw_errata_wa *errata_wa)
@@ -288,16 +174,6 @@ void cam_cpastop_scm_write(struct cam_cpas_hw_errata_wa *errata_wa)
 	reg_val = scm_io_read(errata_wa->data.reg_info.offset);
 	reg_val |= errata_wa->data.reg_info.value;
 	scm_io_write(errata_wa->data.reg_info.offset, reg_val);
-}
-
-static int camera_platform_compare_dev(struct device *dev, void *data)
-{
-	return platform_bus_type.match(dev, (struct device_driver *) data);
-}
-
-static int camera_i2c_compare_dev(struct device *dev, void *data)
-{
-	return i2c_bus_type.match(dev, (struct device_driver *) data);
 }
 #endif
 
@@ -313,119 +189,6 @@ void cam_free_clear(const void * ptr)
 }
 #endif
 
-/* Callback to compare device from match list before adding as component */
-static inline int camera_component_compare_dev(struct device *dev, void *data)
-{
-	return dev == data;
-}
-
-/* Add component matches to list for master of aggregate driver */
-int camera_component_match_add_drivers(struct device *master_dev,
-	struct component_match **match_list)
-{
-	int i, rc = 0;
-	struct platform_device *pdev = NULL;
-	struct i2c_client *client = NULL;
-	struct device *start_dev = NULL, *match_dev = NULL;
-
-	if (!master_dev || !match_list) {
-		CAM_ERR(CAM_UTIL, "Invalid parameters for component match add");
-		rc = -EINVAL;
-		goto end;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(cam_component_platform_drivers); i++) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-		struct device_driver const *drv =
-			&cam_component_platform_drivers[i]->driver;
-		const void *drv_ptr = (const void *)drv;
-#else
-		struct device_driver *drv = &cam_component_platform_drivers[i]->driver;
-		void *drv_ptr = (void *)drv;
-#endif
-		start_dev = NULL;
-		while ((match_dev = bus_find_device(&platform_bus_type,
-			start_dev, drv_ptr, &camera_platform_compare_dev))) {
-			put_device(start_dev);
-			pdev = to_platform_device(match_dev);
-			CAM_DBG(CAM_UTIL, "Adding matched component:%s", pdev->name);
-			component_match_add(master_dev, match_list,
-				camera_component_compare_dev, match_dev);
-			start_dev = match_dev;
-		}
-		put_device(start_dev);
-	}
-
-	for (i = 0; i < ARRAY_SIZE(cam_component_i2c_drivers); i++) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-		struct device_driver const *drv =
-			&cam_component_i2c_drivers[i]->driver;
-		const void *drv_ptr = (const void *)drv;
-#else
-		struct device_driver *drv = &cam_component_i2c_drivers[i]->driver;
-		void *drv_ptr = (void *)drv;
-#endif
-		start_dev = NULL;
-		while ((match_dev = bus_find_device(&i2c_bus_type,
-			start_dev, drv_ptr, &camera_i2c_compare_dev))) {
-			put_device(start_dev);
-			client = to_i2c_client(match_dev);
-			CAM_DBG(CAM_UTIL, "Adding matched component:%s", client->name);
-			component_match_add(master_dev, match_list,
-				camera_component_compare_dev, match_dev);
-			start_dev = match_dev;
-		}
-		put_device(start_dev);
-	}
-
-end:
-	return rc;
-}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-#include <linux/qcom-iommu-util.h>
-void cam_check_iommu_faults(struct iommu_domain *domain,
-	struct cam_smmu_pf_info *pf_info)
-{
-	struct qcom_iommu_fault_ids fault_ids = {0, 0, 0};
-
-	if (qcom_iommu_get_fault_ids(domain, &fault_ids))
-		CAM_ERR(CAM_SMMU, "Cannot get smmu fault ids");
-	else
-		CAM_ERR(CAM_SMMU, "smmu fault ids bid:%d pid:%d mid:%d",
-			fault_ids.bid, fault_ids.pid, fault_ids.mid);
-
-	pf_info->bid = fault_ids.bid;
-	pf_info->pid = fault_ids.pid;
-	pf_info->mid = fault_ids.mid;
-}
-#else
-void cam_check_iommu_faults(struct iommu_domain *domain,
-	struct cam_smmu_pf_info *pf_info)
-{
-	struct iommu_fault_ids fault_ids = {0, 0, 0};
-
-	if (iommu_get_fault_ids(domain, &fault_ids))
-		CAM_ERR(CAM_SMMU, "Error: Can not get smmu fault ids");
-
-	CAM_ERR(CAM_SMMU, "smmu fault ids bid:%d pid:%d mid:%d",
-		fault_ids.bid, fault_ids.pid, fault_ids.mid);
-
-	pf_info->bid = fault_ids.bid;
-	pf_info->pid = fault_ids.pid;
-	pf_info->mid = fault_ids.mid;
-}
-#endif
-
-static int inline cam_subdev_list_cmp(struct cam_subdev *entry_1, struct cam_subdev *entry_2)
-{
-	if (entry_1->close_seq_prior > entry_2->close_seq_prior)
-		return 1;
-	else if (entry_1->close_seq_prior < entry_2->close_seq_prior)
-		return -1;
-	else
-		return 0;
-}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 void cam_smmu_util_iommu_custom(struct device *dev,
@@ -434,27 +197,16 @@ void cam_smmu_util_iommu_custom(struct device *dev,
 	return;
 }
 
-int cam_req_mgr_ordered_list_cmp(void *priv,
-	const struct list_head *head_1, const struct list_head *head_2)
-{
-	return cam_subdev_list_cmp(list_entry(head_1, struct cam_subdev, list),
-		list_entry(head_2, struct cam_subdev, list));
-}
-
 int cam_compat_util_get_dmabuf_va(struct dma_buf *dmabuf, uintptr_t *vaddr)
 {
 	struct dma_buf_map mapping;
 	int error_code = dma_buf_vmap(dmabuf, &mapping);
 
-	if (error_code) {
+	if (error_code)
 		*vaddr = 0;
-	} else {
+	else
 		*vaddr = (mapping.is_iomem) ?
 			(uintptr_t)mapping.vaddr_iomem : (uintptr_t)mapping.vaddr;
-		CAM_DBG(CAM_MEM,
-			"dmabuf=%p, *vaddr=%p, is_iomem=%d, vaddr_iomem=%p, vaddr=%p",
-			dmabuf, *vaddr, mapping.is_iomem, mapping.vaddr_iomem, mapping.vaddr);
-	}
 
 	return error_code;
 }
@@ -464,12 +216,6 @@ void cam_compat_util_put_dmabuf_va(struct dma_buf *dmabuf, void *vaddr)
 	struct dma_buf_map mapping = DMA_BUF_MAP_INIT_VADDR(vaddr);
 
 	dma_buf_vunmap(dmabuf, &mapping);
-}
-
-void cam_i3c_driver_remove(struct i3c_device *client)
-{
-	CAM_DBG(CAM_SENSOR, "I3C remove invoked for %s",
-		(client ? dev_name(&client->dev) : "none"));
 }
 
 #else
@@ -482,13 +228,6 @@ void cam_smmu_util_iommu_custom(struct device *dev,
 		iommu_dma_reserve_iova(dev, discard_start, discard_length);
 
 	return;
-}
-
-int cam_req_mgr_ordered_list_cmp(void *priv,
-	struct list_head *head_1, struct list_head *head_2)
-{
-	return cam_subdev_list_cmp(list_entry(head_1, struct cam_subdev, list),
-		list_entry(head_2, struct cam_subdev, list));
 }
 
 int cam_compat_util_get_dmabuf_va(struct dma_buf *dmabuf, uintptr_t *vaddr)
@@ -511,53 +250,4 @@ void cam_compat_util_put_dmabuf_va(struct dma_buf *dmabuf, void *vaddr)
 	dma_buf_vunmap(dmabuf, vaddr);
 }
 
-int cam_i3c_driver_remove(struct i3c_device *client)
-{
-	CAM_DBG(CAM_SENSOR, "I3C remove invoked for %s",
-		(client ? dev_name(&client->dev) : "none"));
-	return 0;
-}
-#endif
-
-#if KERNEL_VERSION(5, 15, 0) <= LINUX_VERSION_CODE
-long cam_dma_buf_set_name(struct dma_buf *dmabuf, const char *name)
-{
-	long ret = 0;
-
-	ret = dma_buf_set_name(dmabuf, name);
-
-	return ret;
-}
-#else
-long cam_dma_buf_set_name(struct dma_buf *dmabuf, const char *name)
-{
-	return 0;
-}
-#endif
-
-#if KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE
-int cam_get_subpart_info(uint32_t *part_info, int *num_cam)
-{
-	int rc = 0;
-
-	*num_cam = socinfo_get_part_count(PART_CAMERA);
-	CAM_DBG(CAM_CPAS, "number of cameras: %d", *num_cam);
-
-	/*
-	 * If bit value in part_info is "0" then HW is available.
-	 * If bit value in part_info is "1" then HW is unavailable.
-	 */
-	rc = socinfo_get_subpart_info(PART_CAMERA, part_info, *num_cam);
-	if (rc) {
-		CAM_ERR(CAM_CPAS, "Failed while getting subpart_info, rc = %d.", rc);
-		return rc;
-	}
-
-	return 0;
-}
-#else
-int cam_get_subpart_info(uint32_t *part_info, int *num_cam)
-{
-	return 0;
-}
 #endif

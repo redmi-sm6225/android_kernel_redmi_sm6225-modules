@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
@@ -30,8 +30,6 @@
 #include "cam_hw_mgr_intf.h"
 #include "cam_debug_util.h"
 #include "cam_smmu_api.h"
-#include "camera_main.h"
-#include "cam_context_utils.h"
 
 #define OPE_DEV_NAME        "cam-ope"
 
@@ -48,34 +46,22 @@ struct cam_ope_subdev {
 static struct cam_ope_subdev g_ope_dev;
 
 static void cam_ope_dev_iommu_fault_handler(
-	struct cam_smmu_pf_info *pf_smmu_info)
+	struct iommu_domain *domain, struct device *dev, unsigned long iova,
+	int flags, void *token, uint32_t buf_info)
 {
-	int i, rc;
+	int i = 0;
 	struct cam_node *node = NULL;
-	struct cam_hw_dump_pf_args pf_args = {0};
 
-	if (!pf_smmu_info || !pf_smmu_info->token) {
+	if (!token) {
 		CAM_ERR(CAM_OPE, "invalid token in page handler cb");
 		return;
 	}
 
-	node = (struct cam_node *)pf_smmu_info->token;
-	pf_args.pf_smmu_info = pf_smmu_info;
+	node = (struct cam_node *)token;
 
-	for (i = 0; i < node->ctx_size; i++) {
-		cam_context_dump_pf_info(&(node->ctx_list[i]), &pf_args);
-		if (pf_args.pf_context_info.ctx_found)
-			/* found ctx and packet of the faulted address */
-			break;
-	}
-
-	if (i == node->ctx_size) {
-		/* Faulted ctx not found. But report PF to UMD anyway*/
-		rc = cam_context_send_pf_evt(NULL, &pf_args);
-		if (rc)
-			CAM_ERR(CAM_OPE,
-				"Failed to notify PF event to userspace rc: %d", rc);
-	}
+	for (i = 0; i < node->ctx_size; i++)
+		cam_context_dump_pf_info(&(node->ctx_list[i]), iova,
+			buf_info);
 }
 
 static int cam_ope_subdev_open(struct v4l2_subdev *sd,
@@ -114,7 +100,7 @@ end:
 	return rc;
 }
 
-static int cam_ope_subdev_close_internal(struct v4l2_subdev *sd,
+static int cam_ope_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	int rc = 0;
@@ -153,34 +139,19 @@ end:
 	return rc;
 }
 
-static int cam_ope_subdev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_OPE, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-
-	return cam_ope_subdev_close_internal(sd, fh);
-}
-
 const struct v4l2_subdev_internal_ops cam_ope_subdev_internal_ops = {
 	.open = cam_ope_subdev_open,
 	.close = cam_ope_subdev_close,
 };
 
-static int cam_ope_subdev_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_ope_subdev_probe(struct platform_device *pdev)
 {
 	int rc = 0, i = 0;
 	struct cam_node *node;
 	struct cam_hw_mgr_intf *hw_mgr_intf;
 	int iommu_hdl = -1;
-	struct platform_device *pdev = to_platform_device(dev);
 
-	CAM_DBG(CAM_OPE, "Binding OPE subdev component");
+	CAM_DBG(CAM_OPE, "OPE subdev probe start");
 	if (!pdev) {
 		CAM_ERR(CAM_OPE, "pdev is NULL");
 		return -EINVAL;
@@ -188,7 +159,6 @@ static int cam_ope_subdev_component_bind(struct device *dev,
 
 	g_ope_dev.sd.pdev = pdev;
 	g_ope_dev.sd.internal_ops = &cam_ope_subdev_internal_ops;
-	g_ope_dev.sd.close_seq_prior = CAM_SD_CLOSE_MEDIUM_PRIORITY;
 	rc = cam_subdev_probe(&g_ope_dev.sd, pdev, OPE_DEV_NAME,
 		CAM_OPE_DEVICE_TYPE);
 	if (rc) {
@@ -214,7 +184,7 @@ static int cam_ope_subdev_component_bind(struct device *dev,
 	for (i = 0; i < OPE_CTX_MAX; i++) {
 		g_ope_dev.ctx_ope[i].base = &g_ope_dev.ctx[i];
 		rc = cam_ope_context_init(&g_ope_dev.ctx_ope[i],
-			hw_mgr_intf, i, iommu_hdl);
+			hw_mgr_intf, i);
 		if (rc) {
 			CAM_ERR(CAM_OPE, "OPE context init failed");
 			goto ctx_fail;
@@ -234,8 +204,7 @@ static int cam_ope_subdev_component_bind(struct device *dev,
 	g_ope_dev.open_cnt = 0;
 	mutex_init(&g_ope_dev.ope_lock);
 
-	node->sd_handler = cam_ope_subdev_close_internal;
-	CAM_DBG(CAM_OPE, "Subdev component bound successfully");
+	CAM_DBG(CAM_OPE, "OPE subdev probe complete");
 
 	return rc;
 
@@ -249,59 +218,35 @@ hw_alloc_fail:
 	return rc;
 }
 
-static void cam_ope_subdev_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_ope_subdev_remove(struct platform_device *pdev)
 {
 	int i;
 	struct v4l2_subdev *sd;
 	struct cam_subdev *subdev;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	if (!pdev) {
 		CAM_ERR(CAM_OPE, "pdev is NULL");
-		return;
+		return -ENODEV;
 	}
 
 	sd = platform_get_drvdata(pdev);
 	if (!sd) {
 		CAM_ERR(CAM_OPE, "V4l2 subdev is NULL");
-		return;
+		return -ENODEV;
 	}
 
 	subdev = v4l2_get_subdevdata(sd);
 	if (!subdev) {
 		CAM_ERR(CAM_OPE, "cam subdev is NULL");
-		return;
+		return -ENODEV;
 	}
 
 	for (i = 0; i < OPE_CTX_MAX; i++)
 		cam_ope_context_deinit(&g_ope_dev.ctx_ope[i]);
-
 	cam_node_deinit(g_ope_dev.node);
 	cam_subdev_remove(&g_ope_dev.sd);
 	mutex_destroy(&g_ope_dev.ope_lock);
-}
 
-const static struct component_ops cam_ope_subdev_component_ops = {
-	.bind = cam_ope_subdev_component_bind,
-	.unbind = cam_ope_subdev_component_unbind,
-};
-
-static int cam_ope_subdev_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_OPE, "Adding OPE subdev component");
-	rc = component_add(&pdev->dev, &cam_ope_subdev_component_ops);
-	if (rc)
-		CAM_ERR(CAM_OPE, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
-static int cam_ope_subdev_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_ope_subdev_component_ops);
 	return 0;
 }
 
@@ -311,7 +256,7 @@ static const struct of_device_id cam_ope_dt_match[] = {
 };
 
 
-struct platform_driver cam_ope_subdev_driver = {
+static struct platform_driver cam_ope_subdev_driver = {
 	.probe = cam_ope_subdev_probe,
 	.remove = cam_ope_subdev_remove,
 	.driver = {
@@ -330,7 +275,6 @@ void cam_ope_subdev_exit_module(void)
 {
 	platform_driver_unregister(&cam_ope_subdev_driver);
 }
-
 MODULE_DESCRIPTION("MSM OPE driver");
 MODULE_LICENSE("GPL v2");
 

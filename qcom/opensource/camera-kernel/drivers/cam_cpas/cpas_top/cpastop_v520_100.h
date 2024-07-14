@@ -1,17 +1,22 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CPASTOP_V520_100_H_
 #define _CPASTOP_V520_100_H_
+
+#define TEST_IRQ_ENABLE 0
 
 static struct cam_camnoc_irq_sbm cam_cpas_v520_100_irq_sbm = {
 	.sbm_enable = {
 		.access_type = CAM_REG_TYPE_READ_WRITE,
 		.enable = true,
 		.offset = 0xA40, /* SBM_FAULTINEN0_LOW */
-		.value = 0x1,    /* SBM_FAULTINEN0_LOW_PORT0_MASK*/
+		.value = 0x1 | /* SBM_FAULTINEN0_LOW_PORT0_MASK*/
+			(TEST_IRQ_ENABLE ?
+			0x2 : /* SBM_FAULTINEN0_LOW_PORT6_MASK */
+			0x0) /* SBM_FAULTINEN0_LOW_PORT1_MASK */,
 	},
 	.sbm_status = {
 		.access_type = CAM_REG_TYPE_READ,
@@ -22,7 +27,7 @@ static struct cam_camnoc_irq_sbm cam_cpas_v520_100_irq_sbm = {
 		.access_type = CAM_REG_TYPE_WRITE,
 		.enable = true,
 		.offset = 0xA80, /* SBM_FLAGOUTCLR0_LOW */
-		.value = 0x1,
+		.value = TEST_IRQ_ENABLE ? 0x3 : 0x1,
 	}
 };
 
@@ -52,7 +57,7 @@ static struct cam_camnoc_irq_err
 	},
 	{
 		.irq_type = CAM_CAMNOC_HW_IRQ_CAMNOC_TEST,
-		.enable = false,
+		.enable = TEST_IRQ_ENABLE ? true : false,
 		.sbm_port = 0x2, /* SBM_FAULTINSTATUS0_LOW_PORT6_MASK */
 		.err_enable = {
 			.access_type = CAM_REG_TYPE_READ_WRITE,
@@ -76,7 +81,6 @@ static struct cam_camnoc_specific
 	cam_cpas_v520_100_camnoc_specific[] = {
 	{
 		.port_type = CAM_CAMNOC_CDM,
-		.port_name = "CDM",
 		.enable = true,
 		.priority_lut_low = {
 			.enable = true,
@@ -119,7 +123,6 @@ static struct cam_camnoc_specific
 	},
 	{
 		.port_type = CAM_CAMNOC_TFE,
-		.port_name = "TFE",
 		.enable = true,
 		.priority_lut_low = {
 			.enable = true,
@@ -164,17 +167,9 @@ static struct cam_camnoc_specific
 			 */
 			.enable = false,
 		},
-		.maxwr_low = {
-			.enable = true,
-			.access_type = CAM_REG_TYPE_READ,
-			.masked_value = 0,
-			.offset = 0x20, /* TFE_MAXWR_LOW */
-			.value = 0x0,
-		},
 	},
 	{
 		.port_type = CAM_CAMNOC_OPE,
-		.port_name = "OPE",
 		.enable = true,
 		.priority_lut_low = {
 			.enable = true,
@@ -216,13 +211,6 @@ static struct cam_camnoc_specific
 			 */
 			.enable = false,
 		},
-		.maxwr_low = {
-			.enable = false,
-			.access_type = CAM_REG_TYPE_READ,
-			.masked_value = 0,
-			.offset = 0x420, /* OPE_MAXWR_LOW */
-			.value = 0x0,
-		},
 	},
 };
 
@@ -247,14 +235,6 @@ static struct cam_camnoc_info cam520_cpas100_camnoc_info = {
 	.irq_err_size = ARRAY_SIZE(cam_cpas_v520_100_irq_err),
 	.err_logger = &cam520_cpas100_err_logger_offsets,
 	.errata_wa_list = NULL,
-	.test_irq_info = {
-		.sbm_enable_mask = 0x2,
-		.sbm_clear_mask = 0x2,
-	}
 };
 
-static struct cam_cpas_camnoc_qchannel cam520_cpas100_qchannel_info = {
-	.qchannel_ctrl   = 0x14,
-	.qchannel_status = 0x18,
-};
 #endif /* _CPASTOP_V520_100_H_ */

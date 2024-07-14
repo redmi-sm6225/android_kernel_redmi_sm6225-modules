@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_SUBDEV_H_
@@ -18,18 +17,7 @@
 #define CAM_SUBDEVICE_EVENT_MAX 30
 
 enum cam_subdev_message_type_t {
-	CAM_SUBDEV_MESSAGE_REG_DUMP = 0x1,
-	CAM_SUBDEV_MESSAGE_APPLY_CSIPHY_AUX,
-	CAM_SUBDEV_MESSAGE_DOMAIN_ID_SECURE_PARAMS,
-	CAM_SUBDEV_MESSAGE_CLOCK_UPDATE
-};
-
-/* Enum for close sequence priority */
-enum cam_subdev_close_seq_priority {
-	CAM_SD_CLOSE_HIGH_PRIORITY,
-	CAM_SD_CLOSE_MEDIUM_PRIORITY,
-	CAM_SD_CLOSE_MEDIUM_LOW_PRIORITY,
-	CAM_SD_CLOSE_LOW_PRIORITY
+	CAM_SUBDEV_MESSAGE_IRQ_ERR = 0x1
 };
 
 enum cam_subdev_rwsem {
@@ -55,8 +43,6 @@ enum cam_subdev_rwsem {
  * @ent_function:          Media entity function type. Can be:
  *                             %CAM_IFE_DEVICE_TYPE - identifies as IFE device.
  *                             %CAM_ICP_DEVICE_TYPE - identifies as ICP device.
- * @list:                  list pointer
- * @close_seq_prior:         cam_subdev_close_seq_priority type
  *
  * Each instance of a subdev driver should create this struct, either
  * stand-alone or embedded in a larger struct. This structure should be
@@ -75,9 +61,8 @@ struct cam_subdev {
 	void                                  (*msg_cb)(
 					struct v4l2_subdev *sd,
 					enum cam_subdev_message_type_t msg_type,
-					void *data);
-	struct list_head                       list;
-	enum cam_subdev_close_seq_priority     close_seq_prior;
+					uint32_t data);
+	bool                                   subdev_node_created;
 };
 
 /**
@@ -92,7 +77,7 @@ struct cam_subdev {
  */
 void cam_subdev_notify_message(u32 subdev_type,
 		enum cam_subdev_message_type_t message_type,
-		void *data);
+		uint32_t data);
 
 /**
  * cam_subdev_probe()

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_LITE17X_H_
@@ -27,9 +27,8 @@ static struct cam_irq_register_set vfe17x_top_irq_reg_set[2] = {
 static struct cam_irq_controller_reg_info vfe17x_top_irq_reg_info = {
 	.num_registers = 2,
 	.irq_reg_set = vfe17x_top_irq_reg_set,
-	.global_irq_cmd_offset = 0x00000058,
-	.global_clear_bitmask  = 0x00000001,
-	.clear_all_bitmask     = 0xFFFFFFFF,
+	.global_clear_offset  = 0x00000058,
+	.global_clear_bitmask = 0x00000001,
 };
 
 static struct cam_vfe_top_ver2_reg_offset_common vfe17x_top_common_reg = {
@@ -88,14 +87,6 @@ static struct cam_vfe_rdi_reg_data  vfe17x_rdi_3_data = {
 	.reg_update_irq_mask      = 0x100,
 };
 
-static struct cam_vfe_rdi_overflow_status vfe17x_rdi_irq_status = {
-	.rdi0_overflow_mask = 0x8,
-	.rdi1_overflow_mask = 0x10,
-	.rdi2_overflow_mask = 0x18,
-	.rdi3_overflow_mask = 0x20,
-	.rdi_overflow_mask  = 0x3c,
-};
-
 static struct cam_vfe_top_ver2_hw_info vfe17x_top_hw_info = {
 	.common_reg = &vfe17x_top_common_reg,
 	.camif_hw_info = {
@@ -113,7 +104,6 @@ static struct cam_vfe_top_ver2_hw_info vfe17x_top_hw_info = {
 			&vfe17x_rdi_2_data,
 			&vfe17x_rdi_3_data,
 			},
-		.rdi_irq_status  = &vfe17x_rdi_irq_status,
 		},
 	.num_mux = 4,
 	.mux_type = {
@@ -151,11 +141,10 @@ static struct cam_vfe_bus_ver2_hw_info vfe17x_bus_hw_info = {
 		.pwr_iso_cfg                  = 0x000020CC,
 		.dual_master_comp_cfg         = 0x00002028,
 		.irq_reg_info = {
-			.num_registers         = 3,
-			.irq_reg_set           = vfe17x_bus_irq_reg,
-			.global_irq_cmd_offset = 0x00002068,
-			.global_clear_bitmask  = 0x00000001,
-			.clear_all_bitmask     = 0xFFFFFFFF,
+			.num_registers        = 3,
+			.irq_reg_set          = vfe17x_bus_irq_reg,
+			.global_clear_offset  = 0x00002068,
+			.global_clear_bitmask = 0x00000001,
 		},
 		.comp_error_status            = 0x0000206C,
 		.comp_ovrwr_status            = 0x00002070,
@@ -164,7 +153,6 @@ static struct cam_vfe_bus_ver2_hw_info vfe17x_bus_hw_info = {
 		.addr_sync_cfg                = 0x0000207C,
 		.addr_sync_frame_hdr          = 0x00002080,
 		.addr_sync_no_sync            = 0x00002084,
-		.top_irq_mask_0               = 0x0000005C,
 	},
 	.num_client = 4,
 	.bus_client_reg = {
@@ -334,19 +322,10 @@ static struct cam_vfe_bus_ver2_hw_info vfe17x_bus_hw_info = {
 			.max_height    = -1,
 		},
 	},
-	.top_irq_shift = 9,
-	.support_consumed_addr = false,
-	.max_out_res = CAM_ISP_IFE_OUT_RES_BASE + 23,
-};
-
-static struct cam_vfe_irq_hw_info vfe17x_irq_hw_info = {
-	.reset_mask    = BIT(31),
-	.supported_irq = CAM_VFE_HW_IRQ_CAP_LITE_INT_CSID,
-	.top_irq_reg   = &vfe17x_top_irq_reg_info,
 };
 
 static struct cam_vfe_hw_info cam_vfe_lite17x_hw_info = {
-	.irq_hw_info                  = &vfe17x_irq_hw_info,
+	.irq_reg_info                  = &vfe17x_top_irq_reg_info,
 
 	.bus_version                   = CAM_VFE_BUS_VER_2_0,
 	.bus_hw_info                   = &vfe17x_bus_hw_info,

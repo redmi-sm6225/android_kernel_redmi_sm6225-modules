@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CSID_PPI_100_H_
@@ -32,4 +33,5 @@ int cam_csid_ppi100_init_module(void);
  * @brief : API to remove PPI Dev from platform framework.
  */
 void cam_csid_ppi100_exit_module(void);
+
 #endif /*_CAM_CSID_PPI_100_H_ */

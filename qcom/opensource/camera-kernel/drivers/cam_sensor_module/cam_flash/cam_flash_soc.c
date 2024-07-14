@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
- *
+ * Copyright (c) 2017-2018, 2020, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -11,59 +10,6 @@
 #include "cam_res_mgr_api.h"
 #include <dt-bindings/msm-camera.h>
 
-void cam_flash_put_source_node_data(struct cam_flash_ctrl *fctrl)
-{
-	uint32_t count = 0, i = 0;
-	struct cam_flash_private_soc *soc_private = NULL;
-
-	if (!fctrl) {
-		CAM_ERR(CAM_FLASH, "NULL flash control structure");
-		return;
-	}
-
-	soc_private = fctrl->soc_info.soc_private;
-
-	if (fctrl->switch_trigger) {
-		CAM_DBG(CAM_FLASH, "switch trigger: %s",
-			soc_private->switch_trigger_name);
-		cam_res_mgr_led_trigger_unregister(fctrl->switch_trigger);
-	}
-
-	if (fctrl->flash_num_sources) {
-		if (fctrl->flash_num_sources > CAM_FLASH_MAX_LED_TRIGGERS) {
-			CAM_ERR(CAM_FLASH, "Invalid LED count: %d", count);
-			return;
-		}
-
-		count = fctrl->flash_num_sources;
-
-		for (i = 0; i < count; i++) {
-			CAM_DBG(CAM_FLASH, "Flash default trigger %s",
-				soc_private->flash_trigger_name[i]);
-			cam_res_mgr_led_trigger_unregister(
-				fctrl->flash_trigger[i]);
-		}
-	}
-
-	if (fctrl->torch_num_sources) {
-		if (fctrl->torch_num_sources > CAM_FLASH_MAX_LED_TRIGGERS) {
-			CAM_ERR(CAM_FLASH, "Invalid LED count: %d", count);
-			return;
-		}
-
-		count = fctrl->torch_num_sources;
-
-		for (i = 0; i < count; i++) {
-			CAM_DBG(CAM_FLASH, "Flash default trigger %s",
-				soc_private->flash_trigger_name[i]);
-			cam_res_mgr_led_trigger_unregister(
-				fctrl->torch_trigger[i]);
-		}
-	}
-}
-
-#if __or(IS_REACHABLE(CONFIG_LEDS_QPNP_FLASH_V2), \
-			IS_REACHABLE(CONFIG_LEDS_QTI_FLASH))
 static int32_t cam_get_source_node_info(
 	struct device_node *of_node,
 	struct cam_flash_ctrl *fctrl,
@@ -175,7 +121,7 @@ static int32_t cam_get_source_node_info(
 				"qcom,current-ma",
 				&soc_private->flash_op_current[i]);
 			if (rc) {
-				CAM_DBG(CAM_FLASH, "op-current: read failed");
+				CAM_INFO(CAM_FLASH, "op-current: read failed");
 				rc = 0;
 			}
 
@@ -184,7 +130,7 @@ static int32_t cam_get_source_node_info(
 				"qcom,duration-ms",
 				&soc_private->flash_max_duration[i]);
 			if (rc) {
-				CAM_DBG(CAM_FLASH,
+				CAM_INFO(CAM_FLASH,
 					"max-duration prop unavailable: %d",
 					rc);
 				rc = 0;
@@ -279,7 +225,6 @@ static int32_t cam_get_source_node_info(
 
 	return rc;
 }
-#endif
 
 int cam_flash_get_dt_data(struct cam_flash_ctrl *fctrl,
 	struct cam_hw_soc_info *soc_info)
@@ -313,15 +258,12 @@ int cam_flash_get_dt_data(struct cam_flash_ctrl *fctrl,
 		goto free_soc_private;
 	}
 
-#if __or(IS_ENABLED(CONFIG_LEDS_QPNP_FLASH_V2), \
-			IS_ENABLED(CONFIG_LEDS_QTI_FLASH))
 	rc = cam_get_source_node_info(of_node, fctrl, soc_info->soc_private);
 	if (rc) {
 		CAM_ERR(CAM_FLASH,
 			"cam_flash_get_pmic_source_info failed rc %d", rc);
 		goto free_soc_private;
 	}
-#endif
 	return rc;
 
 free_soc_private:

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #include "cam_cdm.h"
@@ -72,14 +71,6 @@ static struct cam_cdm_perf_mon_regs cdm_1_0_perf_mon0 = {
 	.perf_mon_2 = 0x11c,
 };
 
-static struct cam_cdm_comp_wait_status cdm_1_0_comp_wait_status0 = {
-	.comp_wait_status = 0x88,
-};
-
-static struct cam_cdm_comp_wait_status cdm_1_0_comp_wait_status1 = {
-	.comp_wait_status = 0x8c,
-};
-
 static struct cam_cdm_common_regs cdm_hw_1_0_cmn_reg_offset = {
 	.cdm_hw_version = 0x0,
 	.cam_version = &cdm_hw_1_0_titan_version,
@@ -88,8 +79,6 @@ static struct cam_cdm_common_regs cdm_hw_1_0_cmn_reg_offset = {
 	.core_cfg = 0x18,
 	.core_en = 0x1c,
 	.fe_cfg = 0x20,
-	.cdm_status = 0x0,
-	.irq_context_status = 0x0,
 	.bl_fifo_rb = 0x60,
 	.bl_fifo_base_rb = 0x64,
 	.bl_fifo_len_rb = 0x68,
@@ -111,10 +100,7 @@ static struct cam_cdm_common_regs cdm_hw_1_0_cmn_reg_offset = {
 			&cdm_hw_1_0_bl_pending_req0,
 			NULL,
 		},
-	.comp_wait = {
-			&cdm_1_0_comp_wait_status0,
-			&cdm_1_0_comp_wait_status1,
-		},
+	.comp_wait = { NULL, NULL },
 	.perf_mon = {
 			&cdm_1_0_perf_mon0,
 			NULL,

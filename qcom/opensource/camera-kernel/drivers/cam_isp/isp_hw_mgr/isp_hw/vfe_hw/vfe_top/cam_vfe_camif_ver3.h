@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_CAMIF_VER3_H_
@@ -32,7 +32,6 @@ struct cam_vfe_camif_ver3_reg_data {
 	uint32_t     dual_pd_extern_reg_update_shift;
 	uint32_t     extern_reg_update_mask;
 	uint32_t     dual_ife_pix_en_shift;
-	uint32_t     dual_ife_sync_sel_shift;
 	uint32_t     operating_mode_shift;
 	uint32_t     input_mux_sel_shift;
 
@@ -59,11 +58,6 @@ struct cam_vfe_camif_ver3_reg_data {
 	uint32_t     pp_camif_cfg_en_shift;
 	uint32_t     pp_camif_cfg_ife_out_en_shift;
 	uint32_t     top_debug_cfg_en;
-	uint32_t     dual_vfe_sync_mask;
-
-	uint32_t     input_bayer_fmt;
-	uint32_t     input_yuv_fmt;
-
 };
 
 struct cam_vfe_camif_ver3_hw_info {

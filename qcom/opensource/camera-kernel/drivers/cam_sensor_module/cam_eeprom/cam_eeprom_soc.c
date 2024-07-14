@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -305,14 +304,6 @@ int cam_eeprom_parse_dt(struct cam_eeprom_ctrl_t *e_ctrl)
 
 	of_node = soc_info->dev->of_node;
 
-	rc = of_property_read_bool(of_node, "i3c-target");
-	if (rc) {
-		e_ctrl->is_i3c_device = true;
-		e_ctrl->io_master_info.master_type = I3C_MASTER;
-	}
-
-	CAM_DBG(CAM_SENSOR, "I3C Target: %s", CAM_BOOL_TO_YESNO(e_ctrl->is_i3c_device));
-
 	if (of_property_read_bool(of_node, "multimodule-support")) {
 		CAM_DBG(CAM_UTIL, "Multi Module is Supported");
 		e_ctrl->is_multimodule_mode = true;
@@ -387,21 +378,6 @@ int cam_eeprom_parse_dt(struct cam_eeprom_ctrl_t *e_ctrl)
 			rc = -ENOENT;
 			return rc;
 		}
-	}
-
-	/* Initialize regulators to default parameters */
-	for (i = 0; i < soc_info->num_rgltr; i++) {
-		soc_info->rgltr[i] = devm_regulator_get(soc_info->dev,
-					soc_info->rgltr_name[i]);
-		if (IS_ERR_OR_NULL(soc_info->rgltr[i])) {
-			rc = PTR_ERR(soc_info->rgltr[i]);
-			rc = rc ? rc : -EINVAL;
-			CAM_ERR(CAM_EEPROM, "get failed for regulator %s",
-				 soc_info->rgltr_name[i]);
-			return rc;
-		}
-		CAM_DBG(CAM_EEPROM, "get for regulator %s",
-			soc_info->rgltr_name[i]);
 	}
 
 	return rc;

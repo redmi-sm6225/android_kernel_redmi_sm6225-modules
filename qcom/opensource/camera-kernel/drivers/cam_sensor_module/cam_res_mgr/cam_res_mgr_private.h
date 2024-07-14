@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __CAM_RES_MGR_PRIVATE_H__
@@ -9,10 +9,12 @@
 #include <linux/list.h>
 #include <linux/leds.h>
 #include "cam_soc_util.h"
-#include "cam_sensor_util.h"
 
-#define MAX_SHARED_GPIO_SIZE         16
-#define MAX_SHARED_PCTRL_GPIO_SIZE   10
+#define MAX_SHARED_GPIO_SIZE 16
+
+/* pinctrl states name */
+#define CAM_RES_MGR_SLEEP	"cam_res_mgr_suspend"
+#define CAM_RES_MGR_DEFAULT	"cam_res_mgr_default"
 
 /**
  * enum pinctrl_status - Enum for pinctrl status
@@ -64,33 +66,16 @@ struct cam_flash_res {
 };
 
 /**
- * struct cam_pinctrl_res
- *
- * @active         : Pinctrl state pointer for active state
- * @suspend        : Pinctrl state pointer for suspend state
- * @pstatus        : Pinctrl status holder
- */
-struct cam_pinctrl_res {
-	struct pinctrl_state  *active;
-	struct pinctrl_state  *suspend;
-	enum pinctrl_status   pstatus;
-};
-
-/**
  * struct cam_res_mgr_dt
  *
- * @shared_gpio            : Shared gpios list
- * @shared_pctrl_gpio      : Shared pinctrl gpio list
- * @num_shared_gpio        : Number of shared gpio
- * @num_shared_pctrl_gpio  : Number of shared pinctrl gpio
- * @pctrl_name             : Pinctrl name from shared pinctrl gpio list
+ * @shared_gpio     : Shared gpios list in the device tree
+ * @num_shared_gpio : The number of shared gpio
+ * @pinctrl_info    : Pinctrl information
  */
 struct cam_res_mgr_dt {
-	uint                shared_gpio[MAX_SHARED_GPIO_SIZE];
-	uint                shared_pctrl_gpio[MAX_SHARED_PCTRL_GPIO_SIZE];
-	int                 num_shared_gpio;
-	int                 num_shared_pctrl_gpio;
-	const char         *pctrl_name[MAX_SHARED_PCTRL_GPIO_SIZE];
+	uint                        shared_gpio[MAX_SHARED_GPIO_SIZE];
+	int                         num_shared_gpio;
+	struct cam_soc_pinctrl_info pinctrl_info;
 };
 
 /**
@@ -99,27 +84,27 @@ struct cam_res_mgr_dt {
  * @dev                 : Pointer to the device
  * @dt                  : Device tree resource
  * @shared_gpio_enabled : The flag to indicate if support shared gpio
- * @pstatus             : Top level device pinctrl status
- * @pinctrl             : Device pinctrl pointer
- * @pctrl_res           : Pinctrl resource array
+ * @pstatus             : Shared pinctrl status
  * @gpio_res_list       : List head of the gpio resource
  * @flash_res_list      : List head of the flash resource
  * @gpio_res_lock       : GPIO resource lock
  * @flash_res_lock      : Flash resource lock
+ * @clk_res_lock        : Clk resource lock
  */
 struct cam_res_mgr {
-	struct device          *dev;
-	struct cam_res_mgr_dt   dt;
-	bool                    shared_gpio_enabled;
+	struct device         *dev;
+	struct cam_res_mgr_dt dt;
 
-	enum pinctrl_status     pstatus;
-	struct pinctrl         *pinctrl;
-	struct cam_pinctrl_res  pctrl_res[MAX_SHARED_PCTRL_GPIO_SIZE];
+	bool                  shared_gpio_enabled;
+	enum pinctrl_status   pstatus;
 
-	struct list_head        gpio_res_list;
-	struct list_head        flash_res_list;
-	struct mutex            gpio_res_lock;
-	struct mutex            flash_res_lock;
+	uint                  shared_clk_ref_count;
+
+	struct list_head      gpio_res_list;
+	struct list_head      flash_res_list;
+	struct mutex          gpio_res_lock;
+	struct mutex          flash_res_lock;
+	struct mutex          clk_res_lock;
 };
 
 #endif /* __CAM_RES_MGR_PRIVATE_H__ */

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -22,9 +21,7 @@ struct cam_vfe_mux_rdi_data {
 	struct cam_vfe_top_ver2_reg_offset_common   *common_reg;
 	struct cam_vfe_rdi_ver2_reg                 *rdi_reg;
 	struct cam_vfe_rdi_common_reg_data          *rdi_common_reg_data;
-	struct cam_vfe_rdi_overflow_status          *rdi_irq_status;
 	struct cam_vfe_rdi_reg_data                 *reg_data;
-	struct cam_hw_soc_info                      *soc_info;
 
 	cam_hw_mgr_event_cb_func              event_cb;
 	void                                 *priv;
@@ -36,8 +33,6 @@ struct cam_vfe_mux_rdi_data {
 	spinlock_t                            spin_lock;
 
 	enum cam_isp_hw_sync_mode          sync_mode;
-	struct timespec64                     sof_ts;
-	struct timespec64                     error_ts;
 };
 
 static int cam_vfe_rdi_get_evt_payload(
@@ -86,73 +81,6 @@ static int cam_vfe_rdi_put_evt_payload(
 	return 0;
 }
 
-static int cam_vfe_rdi_cpas_reg_dump(
-struct cam_vfe_mux_rdi_data *rdi_priv)
-{
-	int rc = 0;
-	struct cam_vfe_soc_private *soc_private =
-		rdi_priv->soc_info->soc_private;
-	uint32_t  val;
-
-	if (soc_private->cpas_version == CAM_CPAS_TITAN_175_V120 ||
-		soc_private->cpas_version == CAM_CPAS_TITAN_175_V130 ||
-		soc_private->cpas_version == CAM_CPAS_TITAN_165_V100) {
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x3A20, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE0_nRDI_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE0_nRDI_MAXWR_LOW offset 0x3A20 val 0x%x",
-			val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x5420, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE1_nRDI_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE1_nRDI_MAXWR_LOW offset 0x5420 val 0x%x",
-			val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x3620, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP,
-				"IFE0123_RDI_WR_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP,
-			"IFE0123_RDI_WR_MAXWR_LOW offset 0x3620 val 0x%x", val);
-
-	} else if (soc_private->cpas_version < CAM_CPAS_TITAN_175_V120) {
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x420, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP, "IFE02_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE02_MAXWR_LOW offset 0x420 val 0x%x", val);
-
-		rc = cam_cpas_reg_read(soc_private->cpas_handle,
-				CAM_CPAS_REG_CAMNOC, 0x820, true, &val);
-		if (rc) {
-			CAM_ERR(CAM_ISP, "IFE13_MAXWR_LOW read failed rc=%d",
-				rc);
-			return rc;
-		}
-		CAM_INFO(CAM_ISP, "IFE13_MAXWR_LOW offset 0x820 val 0x%x", val);
-	}
-
-	return 0;
-}
-
 static int cam_vfe_rdi_err_irq_top_half(
 	uint32_t                               evt_id,
 	struct cam_irq_th_payload             *th_payload)
@@ -179,7 +107,9 @@ static int cam_vfe_rdi_err_irq_top_half(
 			th_payload->evt_status_arr[1]);
 		CAM_ERR(CAM_ISP, "Stopping further IRQ processing from vfe=%d",
 			rdi_node->hw_intf->hw_idx);
-		cam_irq_controller_disable_all(
+		cam_irq_controller_disable_irq(rdi_priv->vfe_irq_controller,
+			rdi_priv->irq_err_handle);
+		cam_irq_controller_clear_and_mask(evt_id,
 			rdi_priv->vfe_irq_controller);
 		error_flag = true;
 	}
@@ -194,12 +124,6 @@ static int cam_vfe_rdi_err_irq_top_half(
 	}
 
 	cam_isp_hw_get_timestamp(&evt_payload->ts);
-	if (error_flag) {
-		rdi_priv->error_ts.tv_sec =
-			evt_payload->ts.mono_time.tv_sec;
-		rdi_priv->error_ts.tv_nsec =
-			evt_payload->ts.mono_time.tv_nsec;
-	}
 
 	for (i = 0; i < th_payload->num_registers; i++)
 		evt_payload->irq_reg_val[i] = th_payload->evt_status_arr[i];
@@ -274,10 +198,10 @@ int cam_vfe_rdi_ver2_acquire_resource(
 	rdi_data     = (struct cam_vfe_mux_rdi_data *)rdi_res->res_priv;
 	acquire_data = (struct cam_vfe_acquire_args *)acquire_param;
 
-	rdi_data->event_cb          = acquire_data->event_cb;
-	rdi_data->priv              = acquire_data->priv;
-	rdi_data->sync_mode         = acquire_data->vfe_in.sync_mode;
-	rdi_res->is_rdi_primary_res = false;
+	rdi_data->event_cb    = acquire_data->event_cb;
+	rdi_data->priv        = acquire_data->priv;
+	rdi_data->sync_mode   = acquire_data->vfe_in.sync_mode;
+	rdi_res->rdi_only_ctx = 0;
 
 	return 0;
 }
@@ -322,8 +246,7 @@ static int cam_vfe_rdi_resource_start(
 			cam_vfe_rdi_err_irq_top_half,
 			rdi_res->bottom_half_handler,
 			rdi_res->tasklet_info,
-			&tasklet_bh_api,
-			CAM_IRQ_EVT_GROUP_0);
+			&tasklet_bh_api);
 		if (rsrc_data->irq_err_handle < 1) {
 			CAM_ERR(CAM_ISP, "Error IRQ handle subscribe failure");
 			rc = -ENOMEM;
@@ -331,7 +254,7 @@ static int cam_vfe_rdi_resource_start(
 		}
 	}
 
-	if (!rdi_res->is_rdi_primary_res)
+	if (!rdi_res->rdi_only_ctx)
 		goto end;
 
 	rdi_irq_mask[0] =
@@ -351,19 +274,13 @@ static int cam_vfe_rdi_resource_start(
 			rdi_res->top_half_handler,
 			rdi_res->bottom_half_handler,
 			rdi_res->tasklet_info,
-			&tasklet_bh_api,
-			CAM_IRQ_EVT_GROUP_0);
+			&tasklet_bh_api);
 		if (rsrc_data->irq_handle < 1) {
 			CAM_ERR(CAM_ISP, "IRQ handle subscribe failure");
 			rc = -ENOMEM;
 			rsrc_data->irq_handle = 0;
 		}
 	}
-
-	rsrc_data->sof_ts.tv_sec = 0;
-	rsrc_data->sof_ts.tv_nsec = 0;
-	rsrc_data->error_ts.tv_sec = 0;
-	rsrc_data->error_ts.tv_nsec = 0;
 
 	CAM_DBG(CAM_ISP, "Start RDI %d",
 		rdi_res->res_id - CAM_ISP_HW_VFE_IN_RDI0);
@@ -474,13 +391,7 @@ static int cam_vfe_rdi_handle_irq_bottom_half(void *handler_priv,
 	struct cam_vfe_mux_rdi_data         *rdi_priv;
 	struct cam_vfe_top_irq_evt_payload  *payload;
 	struct cam_isp_hw_event_info         evt_info;
-	struct cam_isp_hw_error_event_info	 err_evt_info;
 	uint32_t                             irq_status0;
-	uint32_t                             irq_status1;
-	uint32_t                             irq_rdi_status;
-	struct cam_hw_soc_info              *soc_info = NULL;
-	struct cam_vfe_soc_private          *soc_private = NULL;
-	struct timespec64                    ts;
 
 	if (!handler_priv || !evt_payload_priv) {
 		CAM_ERR(CAM_ISP, "Invalid params");
@@ -490,14 +401,9 @@ static int cam_vfe_rdi_handle_irq_bottom_half(void *handler_priv,
 	rdi_node = handler_priv;
 	rdi_priv = rdi_node->res_priv;
 	payload = evt_payload_priv;
-	soc_info = rdi_priv->soc_info;
-	soc_private =
-		(struct cam_vfe_soc_private *)soc_info->soc_private;
 
 	irq_status0 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS0];
-	irq_status1 = payload->irq_reg_val[CAM_IFE_IRQ_CAMIF_REG_STATUS1];
 
-	evt_info.hw_type  = CAM_ISP_HW_TYPE_VFE;
 	evt_info.hw_idx   = rdi_node->hw_intf->hw_idx;
 	evt_info.res_id   = rdi_node->res_id;
 	evt_info.res_type = rdi_node->res_type;
@@ -506,10 +412,7 @@ static int cam_vfe_rdi_handle_irq_bottom_half(void *handler_priv,
 
 	if (irq_status0 & rdi_priv->reg_data->sof_irq_mask) {
 		CAM_DBG(CAM_ISP, "Received SOF");
-		rdi_priv->sof_ts.tv_sec =
-			payload->ts.mono_time.tv_sec;
-		rdi_priv->sof_ts.tv_nsec =
-			payload->ts.mono_time.tv_nsec;
+
 		if (rdi_priv->event_cb)
 			rdi_priv->event_cb(rdi_priv->priv,
 				CAM_ISP_HW_EVENT_SOF, (void *)&evt_info);
@@ -527,55 +430,6 @@ static int cam_vfe_rdi_handle_irq_bottom_half(void *handler_priv,
 		ret = CAM_VFE_IRQ_STATUS_SUCCESS;
 	}
 
-	if (!rdi_priv->rdi_irq_status)
-		goto end;
-
-	irq_rdi_status =
-		(irq_status1 &
-		rdi_priv->rdi_irq_status->rdi_overflow_mask);
-	if (irq_rdi_status) {
-		ktime_get_boottime_ts64(&ts);
-		CAM_INFO(CAM_ISP,
-			"current monotonic time stamp seconds %lld:%lld",
-			ts.tv_sec, ts.tv_nsec);
-
-		cam_vfe_rdi_cpas_reg_dump(rdi_priv);
-
-		CAM_INFO(CAM_ISP, "ife_clk_src:%lld",
-			soc_private->ife_clk_src);
-		CAM_INFO(CAM_ISP,
-			"ERROR time %lld:%lld SOF %lld:%lld",
-			rdi_priv->error_ts.tv_sec,
-			rdi_priv->error_ts.tv_nsec,
-			rdi_priv->sof_ts.tv_sec,
-			rdi_priv->sof_ts.tv_nsec);
-
-		if (irq_rdi_status &
-			rdi_priv->rdi_irq_status->rdi0_overflow_mask) {
-			evt_info.res_id = CAM_ISP_IFE_OUT_RES_RDI_0;
-			}
-		else if (irq_rdi_status &
-			rdi_priv->rdi_irq_status->rdi1_overflow_mask) {
-			evt_info.res_id = CAM_ISP_IFE_OUT_RES_RDI_1;
-			}
-		else if (irq_rdi_status &
-			rdi_priv->rdi_irq_status->rdi2_overflow_mask) {
-			evt_info.res_id = CAM_ISP_IFE_OUT_RES_RDI_2;
-			}
-		else if (irq_rdi_status &
-			rdi_priv->rdi_irq_status->rdi3_overflow_mask) {
-			evt_info.res_id = CAM_ISP_IFE_OUT_RES_RDI_3;
-			}
-
-		err_evt_info.err_type = CAM_VFE_IRQ_STATUS_OVERFLOW;
-		evt_info.event_data = (void *)&err_evt_info;
-		if (rdi_priv->event_cb)
-			rdi_priv->event_cb(rdi_priv->priv,
-			CAM_ISP_HW_EVENT_ERROR,
-			(void *)&evt_info);
-		cam_cpas_log_votes(false);
-	}
-end:
 	cam_vfe_rdi_put_evt_payload(rdi_priv, &payload);
 	CAM_DBG(CAM_ISP, "returing status = %d", ret);
 	return ret;
@@ -607,8 +461,6 @@ int cam_vfe_rdi_ver2_init(
 	rdi_priv->rdi_reg    = rdi_info->rdi_reg;
 	rdi_priv->vfe_irq_controller  = vfe_irq_controller;
 	rdi_priv->rdi_common_reg_data = rdi_info->common_reg_data;
-	rdi_priv->soc_info = soc_info;
-	rdi_priv->rdi_irq_status = rdi_info->rdi_irq_status;
 
 	switch (rdi_node->res_id) {
 	case CAM_ISP_HW_VFE_IN_RDI0:

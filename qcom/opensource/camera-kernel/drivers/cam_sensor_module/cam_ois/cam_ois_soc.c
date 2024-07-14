@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -40,29 +39,6 @@ static int cam_ois_get_dt_data(struct cam_ois_ctrl_t *o_ctrl)
 		CAM_ERR(CAM_OIS, "cam_soc_util_get_dt_properties rc %d",
 			rc);
 		return rc;
-	}
-
-	rc = of_property_read_bool(of_node, "i3c-target");
-	if (rc) {
-		o_ctrl->is_i3c_device = true;
-		o_ctrl->io_master_info.master_type = I3C_MASTER;
-	}
-
-	CAM_DBG(CAM_SENSOR, "I3C Target: %s", CAM_BOOL_TO_YESNO(o_ctrl->is_i3c_device));
-
-	/* Initialize regulators to default parameters */
-	for (i = 0; i < soc_info->num_rgltr; i++) {
-		soc_info->rgltr[i] = devm_regulator_get(soc_info->dev,
-					soc_info->rgltr_name[i]);
-		if (IS_ERR_OR_NULL(soc_info->rgltr[i])) {
-			rc = PTR_ERR(soc_info->rgltr[i]);
-			rc = rc ? rc : -EINVAL;
-			CAM_ERR(CAM_OIS, "get failed for regulator %s",
-				 soc_info->rgltr_name[i]);
-			return rc;
-		}
-		CAM_DBG(CAM_OIS, "get for regulator %s",
-			soc_info->rgltr_name[i]);
 	}
 
 	if (!soc_info->gpio_data) {
@@ -135,6 +111,7 @@ int cam_ois_driver_soc_init(struct cam_ois_ctrl_t *o_ctrl)
 
 		o_ctrl->io_master_info.cci_client->cci_device = o_ctrl->cci_num;
 		CAM_DBG(CAM_OIS, "cci-device %d", o_ctrl->cci_num, rc);
+
 	}
 
 	rc = cam_ois_get_dt_data(o_ctrl);

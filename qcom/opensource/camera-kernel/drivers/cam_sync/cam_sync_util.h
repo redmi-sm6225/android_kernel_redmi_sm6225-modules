@@ -1,35 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __CAM_SYNC_UTIL_H__
 #define __CAM_SYNC_UTIL_H__
 
 
+#include <cam_sync_api.h>
 #include "cam_sync_private.h"
 #include "cam_debug_util.h"
 
 extern struct sync_device *sync_dev;
-
-/**
- * struct cam_sync_check_for_dma_release -
- *                          Checks if the dma fence being released
- *                          was created with the sync obj
- *
- * @dma_fence_row_idx     : Get DMA fence row idx that is associated with
- *                          the sync obj
- * @dma_fence_fd          : Check if DMA fence fd is associated with
- *                          sync obj
- * @sync_created_with_dma : Set if the dma fence fd was created
- *                          with sync obj
- */
-struct cam_sync_check_for_dma_release {
-	int32_t dma_fence_row_idx;
-	int32_t dma_fence_fd;
-	bool sync_created_with_dma;
-};
 
 /**
  * @brief: Finds an empty row in the sync table and sets its corresponding bit
@@ -61,14 +43,12 @@ int cam_sync_init_row(struct sync_table_row *table,
 /**
  * @brief: Function to uninitialize a row in the sync table
  *
- * @param table                          : Pointer to the sync objects table
- * @param idx                            : Index of row to initialize
- * @optional param check_for_dma_release : checks for dma fence release
+ * @param table : Pointer to the sync objects table
+ * @param idx   : Index of row to initialize
  *
  * @return Status of operation. Negative in case of error. Zero otherwise.
  */
-int cam_sync_deinit_object(struct sync_table_row *table, uint32_t idx,
-	struct cam_sync_check_for_dma_release *check_for_dma_release);
+int cam_sync_deinit_object(struct sync_table_row *table, uint32_t idx);
 
 /**
  * @brief: Function to initialize a row in the sync table when the object is a
@@ -87,6 +67,8 @@ int cam_sync_init_group_object(struct sync_table_row *table,
 	uint32_t *sync_objs,
 	uint32_t num_objs);
 
+int cam_sync_deinit_object(struct sync_table_row *table, uint32_t idx);
+
 /**
  * @brief: Function to dispatch a kernel callback for a sync callback
  *
@@ -100,14 +82,13 @@ void cam_sync_util_cb_dispatch(struct work_struct *cb_dispatch_work);
 /**
  * @brief: Function to dispatch callbacks for a signaled sync object
  *
- * @sync_obj    : Sync object that is signaled
- * @status      : Status of the signaled object
- * @evt_param   : Event paramaeter
+ * @sync_obj : Sync object that is signaled
+ * @status   : Status of the signaled object
  *
  * @return None
  */
 void cam_sync_util_dispatch_signaled_cb(int32_t sync_obj,
-	uint32_t status, uint32_t evt_param);
+	uint32_t status);
 
 /**
  * @brief: Function to send V4L event to user space
@@ -116,7 +97,6 @@ void cam_sync_util_dispatch_signaled_cb(int32_t sync_obj,
  * @param status   : Status of the event
  * @payload        : Payload that needs to be sent to user space
  * @len            : Length of the payload
- * @evt_param      : Event Paramenter
  *
  * @return None
  */
@@ -124,8 +104,7 @@ void cam_sync_util_send_v4l2_event(uint32_t id,
 	uint32_t sync_obj,
 	int status,
 	void *payload,
-	int len,
-	uint32_t evt_param);
+	int len);
 
 /**
  * @brief: Function which gets the next state of the sync object based on the

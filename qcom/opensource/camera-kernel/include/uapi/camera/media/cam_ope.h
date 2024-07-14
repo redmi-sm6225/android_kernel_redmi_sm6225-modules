@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_OPE_H__
 #define __UAPI_OPE_H__
 
-#include <media/cam_defs.h>
-#include <media/cam_cpas.h>
+#include "cam_defs.h"
+#include "cam_cpas.h"
 
 #define OPE_DEV_NAME_SIZE                  128
 
@@ -89,13 +90,13 @@
  *
  */
 struct ope_stripe_info {
-	__u32 offset;
-	__u32 x_init;
-	__u32 stripe_location;
-	__u32 width;
-	__u32 height;
-	__u32 disable_bus;
-	__u32 reserved;
+	uint32_t offset;
+	uint32_t x_init;
+	uint32_t stripe_location;
+	uint32_t width;
+	uint32_t height;
+	uint32_t disable_bus;
+	uint32_t reserved;
 };
 
 /**
@@ -117,18 +118,18 @@ struct ope_stripe_info {
  *
  */
 struct ope_io_buf_info {
-	__u32 direction;
-	__u32 resource_type;
-	__u32 num_planes;
-	__u32 pix_pattern;
-	__u32 num_stripes[OPE_MAX_PLANES];
-	__u32 mem_handle[OPE_MAX_PLANES];
-	__u32 plane_offset[OPE_MAX_PLANES];
-	__u32 length[OPE_MAX_PLANES];
-	__u32 plane_stride[OPE_MAX_PLANES];
-	__u32 height[OPE_MAX_PLANES];
-	__u32 format;
-	__u32 fence;
+	uint32_t direction;
+	uint32_t resource_type;
+	uint32_t num_planes;
+	uint32_t pix_pattern;
+	uint32_t num_stripes[OPE_MAX_PLANES];
+	uint32_t mem_handle[OPE_MAX_PLANES];
+	uint32_t plane_offset[OPE_MAX_PLANES];
+	uint32_t length[OPE_MAX_PLANES];
+	uint32_t plane_stride[OPE_MAX_PLANES];
+	uint32_t height[OPE_MAX_PLANES];
+	uint32_t format;
+	uint32_t fence;
 	struct ope_stripe_info stripe_info[OPE_MAX_PLANES][OPE_MAX_STRIPES];
 };
 
@@ -141,8 +142,8 @@ struct ope_io_buf_info {
  *
  */
 struct ope_frame_set {
-	__u32 num_io_bufs;
-	__u32 reserved;
+	uint32_t num_io_bufs;
+	uint32_t reserved;
 	struct ope_io_buf_info io_buf[OPE_MAX_IO_BUFS];
 };
 
@@ -163,17 +164,17 @@ struct ope_frame_set {
  */
 
 struct ope_cmd_buf_info {
-	__u32 mem_handle;
-	__u32 offset;
-	__u32 size;
-	__u32 length;
-	__u32 cmd_buf_scope;
-	__u32 type;
-	__u32 cmd_buf_usage;
-	__u32 cmd_buf_buffered;
-	__u32 stripe_idx;
-	__u32 cmd_buf_pass_idx;
-	__u32 prefetch_disable;
+	uint32_t mem_handle;
+	uint32_t offset;
+	uint32_t size;
+	uint32_t length;
+	uint32_t cmd_buf_scope;
+	uint32_t type;
+	uint32_t cmd_buf_usage;
+	uint32_t cmd_buf_buffered;
+	uint32_t stripe_idx;
+	uint32_t cmd_buf_pass_idx;
+	uint32_t prefetch_disable;
 };
 
 /**
@@ -186,8 +187,8 @@ struct ope_cmd_buf_info {
  *
  */
 struct ope_frame_process {
-	__u32 num_cmd_bufs[OPE_MAX_BATCH_SIZE];
-	__u32 batch_size;
+	uint32_t num_cmd_bufs[OPE_MAX_BATCH_SIZE];
+	uint32_t batch_size;
 	struct ope_cmd_buf_info cmd_buf[OPE_MAX_BATCH_SIZE][OPE_MAX_CMD_BUFS];
 	struct ope_frame_set frame_set[OPE_MAX_BATCH_SIZE];
 };
@@ -203,11 +204,11 @@ struct ope_frame_process {
  *
  */
 struct ope_clk_bw_request_v2 {
-	__u64 budget_ns;
-	__u32 frame_cycles;
-	__u32 rt_flag;
-	__u32 reserved;
-	__u32 num_paths;
+	uint64_t budget_ns;
+	uint32_t frame_cycles;
+	uint32_t rt_flag;
+	uint32_t reserved;
+	uint32_t num_paths;
 	struct cam_axi_per_path_bw_vote   axi_path[1];
 };
 
@@ -223,8 +224,8 @@ struct ope_clk_bw_request_v2 {
  *
  */
 struct ope_hw_ver {
-	__u32 hw_type;
-	__u32 reserved;
+	uint32_t hw_type;
+	uint32_t reserved;
 	struct cam_hw_version hw_ver;
 };
 
@@ -240,8 +241,8 @@ struct ope_hw_ver {
 struct ope_query_cap_cmd {
 	struct cam_iommu_handle dev_iommu_handle;
 	struct cam_iommu_handle cdm_iommu_handle;
-	__u32 num_ope;
-	__u32 reserved;
+	uint32_t num_ope;
+	uint32_t reserved;
 	struct ope_hw_ver hw_ver[OPE_DEV_TYPE_MAX];
 };
 
@@ -261,16 +262,16 @@ struct ope_query_cap_cmd {
  *
  */
 struct ope_out_res_info {
-	__u32 res_id;
-	__u32 format;
-	__u32 width;
-	__u32 height;
-	__u32 alignment;
-	__u32 packer_format;
-	__u32 subsample_period;
-	__u32 subsample_pattern;
-	__u32 pixel_pattern;
-	__u32 reserved;
+	uint32_t res_id;
+	uint32_t format;
+	uint32_t width;
+	uint32_t height;
+	uint32_t alignment;
+	uint32_t packer_format;
+	uint32_t subsample_period;
+	uint32_t subsample_pattern;
+	uint32_t pixel_pattern;
+	uint32_t reserved;
 };
 
 /**
@@ -289,16 +290,16 @@ struct ope_out_res_info {
  *
  */
 struct ope_in_res_info {
-	__u32 res_id;
-	__u32 format;
-	__u32 width;
-	__u32 height;
-	__u32 pixel_pattern;
-	__u32 alignment;
-	__u32 unpacker_format;
-	__u32 max_stripe_size;
-	__u32 fps;
-	__u32 reserved;
+	uint32_t res_id;
+	uint32_t format;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pixel_pattern;
+	uint32_t alignment;
+	uint32_t unpacker_format;
+	uint32_t max_stripe_size;
+	uint32_t fps;
+	uint32_t reserved;
 };
 
 /**
@@ -319,17 +320,17 @@ struct ope_in_res_info {
  *
  */
 struct ope_acquire_dev_info {
-	__u32                   hw_type;
-	__u32                   dev_type;
-	char                    dev_name[OPE_DEV_NAME_SIZE];
-	__u32                   nrt_stripes_for_arb;
-	__u32                   secure_mode;
-	__u32                   batch_size;
-	__u32                   num_in_res;
-	struct ope_in_res_info  in_res[OPE_IN_RES_MAX];
-	__u32                   num_out_res;
-	__u32                   reserved;
-	struct ope_out_res_info out_res[OPE_OUT_RES_MAX];
+	uint32_t hw_type;
+	uint32_t dev_type;
+	char     dev_name[OPE_DEV_NAME_SIZE];
+	uint32_t nrt_stripes_for_arb;
+	uint32_t secure_mode;
+	uint32_t batch_size;
+	uint32_t num_in_res;
+	struct   ope_in_res_info in_res[OPE_IN_RES_MAX];
+	uint32_t num_out_res;
+	uint32_t reserved;
+	struct   ope_out_res_info out_res[OPE_OUT_RES_MAX];
 } __attribute__((__packed__));
 
 #endif /* __UAPI_OPE_H__ */

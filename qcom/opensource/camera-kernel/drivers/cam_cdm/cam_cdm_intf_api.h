@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CDM_API_H_
@@ -10,7 +9,6 @@
 #include <media/cam_defs.h>
 #include "cam_cdm_util.h"
 #include "cam_soc_util.h"
-#include "cam_packet_util.h"
 
 #define CAM_CDM_BL_CMD_MAX  25
 
@@ -26,7 +24,6 @@ enum cam_cdm_id {
 	CAM_CDM_IPE1,
 	CAM_CDM_BPS,
 	CAM_CDM_VFE,
-	CAM_CDM_RT,
 	CAM_CDM_MAX
 };
 
@@ -75,8 +72,7 @@ enum cam_cdm_bl_fifo_queue {
  *                     @handle : CDM Client handle
  *                     @userdata : Private data given at the time of acquire
  *                     @status : Callback status
- *                     @cookie : Cookie if the callback is gen irq status or
- *                               pf_args if it is page fault
+ *                     @cookie : Cookie if the callback is gen irq status
  * @base_array_cnt : Input number of ioremapped address pair pointing
  *                     in base_array, needed only if selected cdm is a virtual.
  * @base_array : Input pointer to ioremapped address pair arrary
@@ -89,7 +85,6 @@ enum cam_cdm_bl_fifo_queue {
  * @ops : Output pointer updated by cdm driver to the CDM
  *                     util ops for this HW version of CDM acquired.
  * @handle  : Output Unique handle generated for this acquire
- * @hw_idx  : The physical CDM acquired
  *
  */
 struct cam_cdm_acquire_data {
@@ -98,14 +93,13 @@ struct cam_cdm_acquire_data {
 	enum cam_cdm_id id;
 	void *userdata;
 	void (*cam_cdm_callback)(uint32_t handle, void *userdata,
-		enum cam_cdm_cb_status status, void *cookie);
+		enum cam_cdm_cb_status status, uint64_t cookie);
 	uint32_t base_array_cnt;
 	struct cam_soc_reg_map *base_array[CAM_SOC_MAX_BLOCK];
 	enum cam_cdm_bl_fifo_queue priority;
 	struct cam_hw_version cdm_version;
 	struct cam_cdm_utils_ops *ops;
 	uint32_t handle;
-	uint32_t hw_idx;
 };
 
 /**
@@ -138,25 +132,23 @@ struct cam_cdm_bl_cmd {
  *
  * @flag : 1 for callback needed and 0 for no callback when this BL
  *            request is done
- * @gen_irq_arb : enum for setting arbitration in gen_irq
  * @userdata :Input private data which will be returned as part
  *             of callback if request for this bl request in flags.
+ * @cookie : Cookie if the callback is gen irq status
  * @type : type of the submitted bl cmd address.
  * @cmd_arrary_count : Input number of BL commands to be submitted to CDM
- * @cookie : Cookie if the callback is gen irq status
- * @avail_buff_size: Available buffer size in bytes
+ * @gen_irq_arb : enum for setting arbitration in gen_irq
  * @bl_cmd_array     : Input payload holding the BL cmd's arrary
  *                     to be sumbitted.
  *
  */
 struct cam_cdm_bl_request {
-	bool flag;
-	bool gen_irq_arb;
+	int flag;
 	void *userdata;
+	uint64_t cookie;
 	enum cam_cdm_bl_cmd_addr_type type;
 	uint32_t cmd_arrary_count;
-	struct cam_kmd_buf_info *genirq_buff;
-	uint64_t cookie;
+	bool gen_irq_arb;
 	struct cam_cdm_bl_cmd cmd[1];
 };
 
@@ -268,36 +260,6 @@ int cam_cdm_stream_off(uint32_t handle);
 int cam_cdm_reset_hw(uint32_t handle);
 
 /**
- * @brief : API to publish CDM ops to HW blocks like IFE
- *
- * @return : CDM operations
- *
- */
-struct cam_cdm_utils_ops *cam_cdm_publish_ops(void);
-
-/**
- * @brief : API to register CDM hw to platform framework.
- * @return struct platform_device pointer on on success, or ERR_PTR() on error.
- */
-int cam_hw_cdm_init_module(void);
-
-/**
- * @brief : API to register CDM interface to platform framework.
- * @return struct platform_device pointer on on success, or ERR_PTR() on error.
- */
-int cam_cdm_intf_init_module(void);
-
-/**
- * @brief : API to remove CDM interface from platform framework.
- */
-void cam_cdm_intf_exit_module(void);
-
-/**
- * @brief : API to remove CDM hw from platform framework.
- */
-void cam_hw_cdm_exit_module(void);
-
-/**
  * @brief : API to flush previously acquired CDM,
  *          this should be only performed only if the CDM is private.
  *
@@ -343,4 +305,26 @@ int cam_cdm_detect_hang_error(uint32_t handle);
  * @return 0 on success
  */
 int cam_cdm_dump_debug_registers(uint32_t handle);
+
+/**
+ * @brief : API to register CDM hw to platform framework.
+ * @return struct platform_device pointer on on success, or ERR_PTR() on error.
+ */
+int cam_hw_cdm_init_module(void);
+
+/**
+ * @brief : API to register CDM interface to platform framework.
+ * @return struct platform_device pointer on on success, or ERR_PTR() on error.
+ */
+int cam_cdm_intf_init_module(void);
+
+/**
+ * @brief : API to remove CDM interface from platform framework.
+ */
+void cam_cdm_intf_exit_module(void);
+
+/**
+ * @brief : API to remove CDM hw from platform framework.
+ */
+void cam_hw_cdm_exit_module(void);
 #endif /* _CAM_CDM_API_H_ */

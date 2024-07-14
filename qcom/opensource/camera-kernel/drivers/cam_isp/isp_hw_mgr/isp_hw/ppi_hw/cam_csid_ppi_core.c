@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/iopoll.h>
@@ -12,7 +12,6 @@
 #include "cam_soc_util.h"
 #include "cam_debug_util.h"
 #include "cam_io_util.h"
-#include "cam_common_util.h"
 
 static int cam_csid_ppi_reset(struct cam_csid_ppi_hw *ppi_hw)
 {
@@ -35,10 +34,9 @@ static int cam_csid_ppi_reset(struct cam_csid_ppi_hw *ppi_hw)
 	cam_io_w_mb(PPI_IRQ_CMD_SET, soc_info->reg_map[0].mem_base +
 		ppi_reg->ppi_irq_cmd_addr);
 
-	rc = cam_common_read_poll_timeout(soc_info->reg_map[0].mem_base +
-		ppi_reg->ppi_irq_status_addr,
-		1000, 500000, 0x1, 0x1, &status);
-
+	rc = readl_poll_timeout(soc_info->reg_map[0].mem_base +
+		ppi_reg->ppi_irq_status_addr, status,
+		(status & 0x1) == 0x1, 1000, 500000);
 	CAM_DBG(CAM_ISP, "PPI:%d reset status %d", ppi_hw->hw_intf->hw_idx,
 		status);
 	if (rc < 0) {
@@ -76,7 +74,8 @@ static int cam_csid_ppi_enable_hw(struct cam_csid_ppi_hw  *ppi_hw)
 	}
 
 	for (i = 0; i < soc_info->num_clk; i++) {
-		rc = cam_soc_util_clk_enable(soc_info, false, i, -1, NULL);
+		rc = cam_soc_util_clk_enable(soc_info->clk[i],
+			soc_info->clk_name[i], 0);
 		if (rc)
 			goto clk_disable;
 	}
@@ -106,7 +105,8 @@ static int cam_csid_ppi_enable_hw(struct cam_csid_ppi_hw  *ppi_hw)
 	return 0;
 clk_disable:
 	for (--i; i >= 0; i--)
-		cam_soc_util_clk_disable(soc_info, false, i);
+		cam_soc_util_clk_disable(soc_info->clk[i],
+			soc_info->clk_name[i]);
 	ppi_hw->hw_info->open_count--;
 	return rc;
 }
@@ -152,7 +152,8 @@ static int cam_csid_ppi_disable_hw(struct cam_csid_ppi_hw *ppi_hw)
 	ppi_hw->device_enabled = 0;
 
 	for (i = 0; i < soc_info->num_clk; i++)
-		cam_soc_util_clk_disable(soc_info, false, i);
+		cam_soc_util_clk_disable(soc_info->clk[i],
+			soc_info->clk_name[i]);
 
 	return rc;
 }
@@ -369,4 +370,5 @@ int cam_csid_ppi_hw_deinit(struct cam_csid_ppi_hw *csid_ppi_hw)
 	return cam_soc_util_release_platform_resource(
 		&csid_ppi_hw->hw_info->soc_info);
 }
+
 

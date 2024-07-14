@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 
@@ -13,65 +11,35 @@
 
 
 static struct cam_tfe_top_reg_offset_common  tfe530_top_commong_reg  = {
-	.hw_version                             = 0x00001000,
-	.hw_capability                          = 0x00001004,
-	.lens_feature                           = 0x00001008,
-	.stats_feature                          = 0x0000100C,
-	.zoom_feature                           = 0x00001010,
-	.global_reset_cmd                       = 0x00001014,
-	.core_cgc_ctrl_0                        = 0x00001018,
-	.ahb_cgc_ctrl                           = 0x0000101C,
-	.core_cfg_0                             = 0x00001024,
-	.core_cfg_1                             = 0x00001028,
-	.reg_update_cmd                         = 0x0000102C,
-	.diag_config                            = 0x00001060,
-	.diag_sensor_status_0                   = 0x00001064,
-	.diag_sensor_status_1                   = 0x00001068,
-	.diag_sensor_frame_cnt_status           = 0x0000106C,
-	.violation_status                       = 0x00001070,
-	.stats_throttle_cnt_cfg_0               = 0x00001074,
-	.stats_throttle_cnt_cfg_1               = 0x00001078,
-	.num_debug_reg                          = 4,
-	.debug_reg = {
-		0x000010A0,
-		0x000010A4,
-		0x000010A8,
-		0x000010AC,
-	},
-	.debug_cfg                              = 0x000010DC,
-	.num_perf_cfg                           = 1,
-	.perf_cfg = {
-		{
-			.perf_cnt_cfg           = 0x000010E0,
-			.perf_pixel_count       = 0x000010E4,
-			.perf_line_count        = 0x000010E8,
-			.perf_stall_count       = 0x000010EC,
-			.perf_always_count      = 0x000010F0,
-			.perf_count_status      = 0x000010F4,
-		},
-	},
-	.diag_min_hbi_error_shift               = 15,
-	.diag_neq_hbi_shift                     = 14,
-	.diag_sensor_hbi_mask                   = 0x3FFF,
-	.serializer_supported                   = false,
-	.pp_camif_violation_bit                 = BIT(0),
-	.pp_violation_bit                       = BIT(1),
-	.rdi0_camif_violation_bit               = BIT(2),
-	.rdi1_camif_violation_bit               = BIT(3),
-	.rdi2_camif_violation_bit               = BIT(4),
-	.diag_violation_bit                     = BIT(5),
-	.pp_frame_drop_bit                      = BIT(8),
-	.rdi0_frame_drop_bit                    = BIT(9),
-	.rdi1_frame_drop_bit                    = BIT(10),
-	.rdi2_frame_drop_bit                    = BIT(11),
-	.pp_overflow_bit                        = BIT(16),
-	.rdi0_overflow_bit                      = BIT(17),
-	.rdi1_overflow_bit                      = BIT(18),
-	.rdi2_overflow_bit                      = BIT(19),
-	.mup_shift_val                          = 0,
-	.mup_supported                          = false,
-	.height_shift                           = 16,
-	.epoch_shift_val                        = 16,
+	.hw_version                   = 0x00001000,
+	.hw_capability                = 0x00001004,
+	.lens_feature                 = 0x00001008,
+	.stats_feature                = 0x0000100C,
+	.zoom_feature                 = 0x00001010,
+	.global_reset_cmd             = 0x00001014,
+	.core_cgc_ctrl                = 0x00001018,
+	.ahb_cgc_ctrl                 = 0x0000101C,
+	.core_cfg_0                   = 0x00001024,
+	.core_cfg_1                   = 0x00001028,
+	.reg_update_cmd               = 0x0000102C,
+	.diag_config                  = 0x00001060,
+	.diag_sensor_status_0         = 0x00001064,
+	.diag_sensor_status_1         = 0x00001068,
+	.diag_sensor_frame_cnt_status = 0x0000106C,
+	.violation_status             = 0x00001070,
+	.stats_throttle_cnt_cfg_0     = 0x00001074,
+	.stats_throttle_cnt_cfg_1     = 0x00001078,
+	.debug_0                      = 0x000010A0,
+	.debug_1                      = 0x000010A4,
+	.debug_2                      = 0x000010A8,
+	.debug_3                      = 0x000010AC,
+	.debug_cfg                    = 0x000010DC,
+	.perf_cnt_cfg                 = 0x000010E0,
+	.perf_pixel_count             = 0x000010E4,
+	.perf_line_count              = 0x000010E8,
+	.perf_stall_count             = 0x000010EC,
+	.perf_always_count            = 0x000010F0,
+	.perf_count_status            = 0x000010F4,
 };
 
 static struct cam_tfe_camif_reg  tfe530_camif_reg = {
@@ -163,8 +131,6 @@ static struct cam_tfe_rdi_reg_data tfe530_rdi0_reg_data = {
 		0x00000000,
 	},
 	.enable_diagnostic_hw        = 0x1,
-	.diag_sensor_sel             = 0x1,
-	.diag_sensor_shift           = 0x1,
 };
 
 static struct cam_tfe_rdi_reg  tfe530_rdi1_reg = {
@@ -200,8 +166,6 @@ static struct cam_tfe_rdi_reg_data tfe530_rdi1_reg_data = {
 		0x00000000,
 	},
 	.enable_diagnostic_hw        = 0x1,
-	.diag_sensor_sel             = 0x2,
-	.diag_sensor_shift           = 0x1,
 };
 
 static struct cam_tfe_rdi_reg  tfe530_rdi2_reg = {
@@ -237,8 +201,6 @@ static struct cam_tfe_rdi_reg_data tfe530_rdi2_reg_data = {
 		0x00000000,
 	},
 	.enable_diagnostic_hw        = 0x1,
-	.diag_sensor_sel             = 0x3,
-	.diag_sensor_shift           = 0x1,
 };
 
 static struct cam_tfe_clc_hw_status  tfe530_clc_hw_info[CAM_TFE_MAX_CLC] = {
@@ -487,7 +449,7 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 		.violation_shift  = 30,
 		.image_size_violation = 31,
 	},
-	.num_client = 10,
+	.num_client = CAM_TFE_BUS_MAX_CLIENTS,
 	.bus_client_reg = {
 		/* BUS Client 0 BAYER */
 		{
@@ -770,7 +732,7 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.client_name           = "RDI2/PADF",
 		},
 	},
-	.num_out  = 11,
+	.num_out  = CAM_TFE_BUS_TFE_OUT_MAX,
 	.tfe_out_hw_info = {
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_RDI0,
@@ -778,7 +740,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_5,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_1,
-			.mid[0]              = 23,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_RDI1,
@@ -786,7 +747,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_6,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_2,
-			.mid[0]              = 24,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_RDI2,
@@ -794,7 +754,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_7,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_3,
-			.mid[0]              = 25,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_FULL,
@@ -802,7 +761,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = 4096,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_0,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 16,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_RAW_DUMP,
@@ -810,7 +768,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = 4096,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_1,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 17,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_PDAF,
@@ -818,7 +775,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = 4096,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_7,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_3,
-			.mid[0]              = 25,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_STATS_HDR_BE,
@@ -826,7 +782,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_3,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 21,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_STATS_HDR_BHIST,
@@ -834,7 +789,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_2,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 19,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_STATS_TL_BG,
@@ -842,7 +796,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_2,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 18,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_STATS_AWB_BG,
@@ -850,7 +803,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_3,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 20,
 		},
 		{
 			.tfe_out_id       = CAM_TFE_BUS_TFE_OUT_STATS_BF,
@@ -858,11 +810,8 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 			.max_height       = -1,
 			.composite_group  = CAM_TFE_BUS_COMP_GRP_4,
 			.rup_group_id     = CAM_TFE_BUS_RUP_GRP_0,
-			.mid[0]              = 22,
 		},
 	},
-	.num_comp_grp             = 8,
-	.max_wm_per_comp_grp      = 2,
 	.comp_done_shift          = 8,
 	.top_bus_wr_irq_shift     = 1,
 	.comp_buf_done_mask = 0xFF00,
@@ -871,14 +820,6 @@ static struct cam_tfe_bus_hw_info  tfe530_bus_hw_info = {
 		0xD0000000,
 		0x00000000,
 	},
-	.support_consumed_addr = true,
-	.pdaf_rdi2_mux_en = true,
-	.rdi_width = 64,
-	.mode_cfg_shift = 16,
-	.height_shift = 16,
-	.max_bw_counter_limit  = 0xFF,
-	.counter_limit_shift   = 1,
-	.counter_limit_mask    = 0xF,
 };
 
 struct cam_tfe_hw_info cam_tfe530 = {

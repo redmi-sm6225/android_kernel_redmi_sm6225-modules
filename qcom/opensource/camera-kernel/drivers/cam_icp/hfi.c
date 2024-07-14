@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/io.h>
@@ -13,7 +12,6 @@
 #include <media/cam_icp.h>
 #include <linux/iopoll.h>
 
-#include "cam_presil_hw_access.h"
 #include "cam_io_util.h"
 #include "hfi_reg.h"
 #include "hfi_sys_defs.h"
@@ -22,7 +20,6 @@
 #include "cam_icp_hw_mgr_intf.h"
 #include "cam_debug_util.h"
 #include "cam_compat.h"
-#include "cam_soc_util.h"
 
 #define HFI_VERSION_INFO_MAJOR_VAL  1
 #define HFI_VERSION_INFO_MINOR_VAL  1
@@ -35,144 +32,59 @@
 #define HFI_VERSION_INFO_STEP_BMSK   0xFF
 #define HFI_VERSION_INFO_STEP_SHFT  0
 
-/* TO DO Lower timeout value */
-#define HFI_POLL_DELAY_US 10
-#define HFI_POLL_TIMEOUT_US 1500000
+#define HFI_MAX_POLL_TRY 5
+
+#define HFI_MAX_PC_POLL_TRY 150
+#define HFI_POLL_TRY_SLEEP 1
 
 static struct hfi_info *g_hfi;
 unsigned int g_icp_mmu_hdl;
-
 static DEFINE_MUTEX(hfi_cmd_q_mutex);
 static DEFINE_MUTEX(hfi_msg_q_mutex);
 
-static int cam_hfi_presil_setup(struct hfi_mem_info *hfi_mem);
-static int cam_hfi_presil_set_init_request(void);
-
-#ifndef CONFIG_CAM_PRESIL
-static void hfi_irq_raise(struct hfi_info *hfi)
+void cam_hfi_queue_dump(void)
 {
-	if (hfi->ops.irq_raise)
-		hfi->ops.irq_raise(hfi->priv);
-}
-#endif
-
-static void hfi_irq_enable(struct hfi_info *hfi)
-{
-	if (hfi->ops.irq_enable)
-		hfi->ops.irq_enable(hfi->priv);
-}
-
-static void __iomem *hfi_iface_addr(struct hfi_info *hfi)
-{
-	void __iomem *ret = NULL;
-
-	if (hfi->ops.iface_addr)
-		ret = hfi->ops.iface_addr(hfi->priv);
-
-	return IS_ERR_OR_NULL(ret) ? NULL : ret;
-}
-
-static void hfi_queue_dump(uint32_t *dwords, int count)
-{
+	struct hfi_qtbl *qtbl;
+	struct hfi_qtbl_hdr *qtbl_hdr;
+	struct hfi_q_hdr *cmd_q_hdr, *msg_q_hdr;
+	struct hfi_mem_info *hfi_mem = NULL;
+	uint32_t *read_q, *read_ptr;
 	int i;
-	int rows;
-	int remaining;
 
-	rows = count / 4;
-	remaining = count % 4;
-
-	for (i = 0; i < rows; i++, dwords += 4)
-		CAM_DBG(CAM_HFI,
-			"word[%04d]: 0x%08x 0x%08x 0x%08x 0x%08x",
-			i * 4, dwords[0], dwords[1], dwords[2], dwords[3]);
-
-	if (remaining == 1)
-		CAM_DBG(CAM_HFI, "word[%04d]: 0x%08x", rows * 4, dwords[0]);
-	else if (remaining == 2)
-		CAM_DBG(CAM_HFI, "word[%04d]: 0x%08x 0x%08x",
-			rows * 4, dwords[0], dwords[1]);
-	else if (remaining == 3)
-		CAM_DBG(CAM_HFI, "word[%04d]: 0x%08x 0x%08x 0x%08x",
-			rows * 4, dwords[0], dwords[1], dwords[2]);
-}
-
-void cam_hfi_mini_dump(struct hfi_mini_dump_info *dst)
-{
-	struct hfi_mem_info *hfi_mem = &g_hfi->map;
-	struct hfi_qtbl *qtbl;
-	struct hfi_q_hdr *q_hdr;
-	uint32_t *dwords;
-	int num_dwords;
-
+	hfi_mem = &g_hfi->map;
 	if (!hfi_mem) {
-		CAM_ERR(CAM_HFI, "hfi mem info NULL... unable to dump queues");
+		CAM_ERR(CAM_HFI, "Unable to dump queues hfi memory is NULL");
 		return;
 	}
 
 	qtbl = (struct hfi_qtbl *)hfi_mem->qtbl.kva;
-	q_hdr = &qtbl->q_hdr[Q_CMD];
-	dwords = (uint32_t *)hfi_mem->cmd_q.kva;
-	num_dwords = ICP_CMD_Q_SIZE_IN_BYTES >> BYTE_WORD_SHIFT;
-	memcpy(dst->cmd_q, dwords, ICP_CMD_Q_SIZE_IN_BYTES);
+	qtbl_hdr = &qtbl->q_tbl_hdr;
+	CAM_DBG(CAM_HFI,
+		"qtbl: version = %x size = %u num q = %u qhdr_size = %u",
+		qtbl_hdr->qtbl_version, qtbl_hdr->qtbl_size,
+		qtbl_hdr->qtbl_num_q, qtbl_hdr->qtbl_qhdr_size);
 
-	q_hdr = &qtbl->q_hdr[Q_MSG];
-	dwords = (uint32_t *)hfi_mem->msg_q.kva;
-	memcpy(dst->msg_q, dwords, ICP_CMD_Q_SIZE_IN_BYTES);
-	dst->msg_q_state = g_hfi->msg_q_state;
-	dst->cmd_q_state = g_hfi->cmd_q_state;
+	cmd_q_hdr = &qtbl->q_hdr[Q_CMD];
+	CAM_DBG(CAM_HFI, "cmd: size = %u r_idx = %u w_idx = %u addr = %x",
+		cmd_q_hdr->qhdr_q_size, cmd_q_hdr->qhdr_read_idx,
+		cmd_q_hdr->qhdr_write_idx, hfi_mem->cmd_q.iova);
+	read_q = (uint32_t *)g_hfi->map.cmd_q.kva;
+	read_ptr = (uint32_t *)(read_q + 0);
+	CAM_DBG(CAM_HFI, "CMD Q START");
+	for (i = 0; i < ICP_CMD_Q_SIZE_IN_BYTES >> BYTE_WORD_SHIFT; i++)
+		CAM_DBG(CAM_HFI, "Word: %d Data: 0x%08x ", i, read_ptr[i]);
+
+	msg_q_hdr = &qtbl->q_hdr[Q_MSG];
+	CAM_DBG(CAM_HFI, "msg: size = %u r_idx = %u w_idx = %u addr = %x",
+		msg_q_hdr->qhdr_q_size, msg_q_hdr->qhdr_read_idx,
+		msg_q_hdr->qhdr_write_idx, hfi_mem->msg_q.iova);
+	read_q = (uint32_t *)g_hfi->map.msg_q.kva;
+	read_ptr = (uint32_t *)(read_q + 0);
+	CAM_DBG(CAM_HFI, "MSG Q START");
+	for (i = 0; i < ICP_MSG_Q_SIZE_IN_BYTES >> BYTE_WORD_SHIFT; i++)
+		CAM_DBG(CAM_HFI, "Word: %d Data: 0x%08x ", i, read_ptr[i]);
 }
 
-void cam_hfi_queue_dump(bool dump_queue_data)
-{
-	struct hfi_mem_info *hfi_mem = &g_hfi->map;
-	struct hfi_qtbl *qtbl;
-	struct hfi_q_hdr *q_hdr;
-	uint32_t *dwords;
-	int num_dwords;
-
-	if (!hfi_mem) {
-		CAM_ERR(CAM_HFI, "hfi mem info NULL... unable to dump queues");
-		return;
-	}
-
-	qtbl = (struct hfi_qtbl *)hfi_mem->qtbl.kva;
-	CAM_INFO(CAM_HFI,
-		"qtbl header: version=0x%08x tbl_size=%u numq=%u qhdr_size=%u",
-		qtbl->q_tbl_hdr.qtbl_version,
-		qtbl->q_tbl_hdr.qtbl_size,
-		qtbl->q_tbl_hdr.qtbl_num_q,
-		qtbl->q_tbl_hdr.qtbl_qhdr_size);
-
-	q_hdr = &qtbl->q_hdr[Q_CMD];
-	CAM_INFO(CAM_HFI,
-		"cmd_q: addr=0x%08x size=%u read_idx=%u write_idx=%u",
-		hfi_mem->cmd_q.iova,
-		q_hdr->qhdr_q_size,
-		q_hdr->qhdr_read_idx,
-		q_hdr->qhdr_write_idx);
-
-	dwords = (uint32_t *)hfi_mem->cmd_q.kva;
-	num_dwords = ICP_CMD_Q_SIZE_IN_BYTES >> BYTE_WORD_SHIFT;
-
-	if (dump_queue_data)
-		hfi_queue_dump(dwords, num_dwords);
-
-	q_hdr = &qtbl->q_hdr[Q_MSG];
-	CAM_INFO(CAM_HFI,
-		"msg_q: addr=0x%08x size=%u read_idx=%u write_idx=%u",
-		hfi_mem->msg_q.iova,
-		q_hdr->qhdr_q_size,
-		q_hdr->qhdr_read_idx,
-		q_hdr->qhdr_write_idx);
-
-	dwords = (uint32_t *)hfi_mem->msg_q.kva;
-	num_dwords = ICP_MSG_Q_SIZE_IN_BYTES >> BYTE_WORD_SHIFT;
-
-	if (dump_queue_data)
-		hfi_queue_dump(dwords, num_dwords);
-}
-
-#ifndef CONFIG_CAM_PRESIL
 int hfi_write_cmd(void *cmd_ptr)
 {
 	uint32_t size_in_words, empty_space, new_write_idx, read_idx, temp;
@@ -251,10 +163,8 @@ int hfi_write_cmd(void *cmd_ptr)
 	 * firmware to process
 	 */
 	wmb();
-	hfi_irq_raise(g_hfi);
-
-	/* Ensure HOST2ICP trigger is received by FW */
-	wmb();
+	cam_io_w_mb((uint32_t)INTR_ENABLE,
+		g_hfi->csr_base + HFI_REG_A5_CSR_HOST2ICPINT);
 err:
 	mutex_unlock(&hfi_cmd_q_mutex);
 	return rc;
@@ -275,7 +185,7 @@ int hfi_read_message(uint32_t *pmsg, uint8_t q_id,
 		return -EINVAL;
 	}
 
-	if (!((q_id == Q_MSG) || (q_id == Q_DBG))) {
+	if (q_id > Q_DBG) {
 		CAM_ERR(CAM_HFI, "Invalid q :%u", q_id);
 		return -EINVAL;
 	}
@@ -305,11 +215,13 @@ int hfi_read_message(uint32_t *pmsg, uint8_t q_id,
 		goto err;
 	}
 
-	size_upper_bound = q->qhdr_q_size;
-	if (q_id == Q_MSG)
+	if (q_id == Q_MSG) {
 		read_q = (uint32_t *)g_hfi->map.msg_q.kva;
-	else
+		size_upper_bound = ICP_HFI_MAX_PKT_SIZE_MSGQ_IN_WORDS;
+	} else {
 		read_q = (uint32_t *)g_hfi->map.dbg_q.kva;
+		size_upper_bound = ICP_HFI_MAX_PKT_SIZE_IN_WORDS;
+	}
 
 	read_ptr = (uint32_t *)(read_q + q->qhdr_read_idx);
 	write_ptr = (uint32_t *)(read_q + q->qhdr_write_idx);
@@ -318,7 +230,12 @@ int hfi_read_message(uint32_t *pmsg, uint8_t q_id,
 		size_in_words = write_ptr - read_ptr;
 	else {
 		word_diff = read_ptr - write_ptr;
-		size_in_words =  q->qhdr_q_size -  word_diff;
+		if (q_id == Q_MSG)
+			size_in_words = (ICP_MSG_Q_SIZE_IN_BYTES >>
+			BYTE_WORD_SHIFT) - word_diff;
+		else
+			size_in_words = (ICP_DBG_Q_SIZE_IN_BYTES >>
+			BYTE_WORD_SHIFT) - word_diff;
 	}
 
 	if ((size_in_words == 0) ||
@@ -352,7 +269,6 @@ err:
 	mutex_unlock(&hfi_msg_q_mutex);
 	return rc;
 }
-#endif /* #ifndef CONFIG_CAM_PRESIL */
 
 int hfi_cmd_ubwc_config(uint32_t *ubwc_cfg)
 {
@@ -448,7 +364,7 @@ int hfi_enable_ipe_bps_pc(bool enable, uint32_t core_info)
 	return 0;
 }
 
-int hfi_set_debug_level(u64 icp_dbg_type, uint32_t lvl)
+int hfi_set_debug_level(u64 a5_dbg_type, uint32_t lvl)
 {
 	uint8_t *prop;
 	struct hfi_cmd_prop *dbg_prop;
@@ -466,9 +382,6 @@ int hfi_set_debug_level(u64 icp_dbg_type, uint32_t lvl)
 	if (lvl > val)
 		return -EINVAL;
 
-	if (g_hfi)
-		g_hfi->dbg_lvl = lvl;
-
 	size = sizeof(struct hfi_cmd_prop) +
 		sizeof(struct hfi_debug);
 
@@ -482,7 +395,7 @@ int hfi_set_debug_level(u64 icp_dbg_type, uint32_t lvl)
 	dbg_prop->num_prop = 1;
 	dbg_prop->prop_data[0] = HFI_PROP_SYS_DEBUG_CFG;
 	dbg_prop->prop_data[1] = lvl;
-	dbg_prop->prop_data[2] = icp_dbg_type;
+	dbg_prop->prop_data[2] = a5_dbg_type;
 	hfi_write_cmd(prop);
 
 	kfree(prop);
@@ -526,55 +439,13 @@ int hfi_set_fw_dump_level(uint32_t lvl)
 	return 0;
 }
 
-int hfi_send_freq_info(int32_t freq)
-{
-	uint8_t *prop = NULL;
-	struct hfi_cmd_prop *dbg_prop = NULL;
-	uint32_t size = 0;
-
-	if (!g_hfi) {
-		CAM_ERR(CAM_HFI, "HFI interface not setup");
-		return -ENODEV;
-	}
-
-	if (!(g_hfi->dbg_lvl & HFI_DEBUG_MSG_PERF))
-		return -EINVAL;
-
-	size = sizeof(struct hfi_cmd_prop) + sizeof(freq);
-	prop = kzalloc(size, GFP_KERNEL);
-	if (!prop)
-		return -ENOMEM;
-
-	dbg_prop = (struct hfi_cmd_prop *)prop;
-	dbg_prop->size = size;
-	dbg_prop->pkt_type = HFI_CMD_SYS_SET_PROPERTY;
-	dbg_prop->num_prop = 1;
-	dbg_prop->prop_data[0] = HFI_PROPERTY_SYS_ICP_HW_FREQUENCY;
-	dbg_prop->prop_data[1] = freq;
-
-	CAM_DBG(CAM_HFI, "prop->size = %d\n"
-			 "prop->pkt_type = %d\n"
-			 "prop->num_prop = %d\n"
-			 "prop->prop_data[0] = %d\n"
-			 "prop->prop_data[1] = %d\n"
-			 "dbg_lvl = 0x%x\n",
-			 dbg_prop->size,
-			 dbg_prop->pkt_type,
-			 dbg_prop->num_prop,
-			 dbg_prop->prop_data[0],
-			 dbg_prop->prop_data[1],
-			 g_hfi->dbg_lvl);
-
-	hfi_write_cmd(prop);
-	kfree(prop);
-	return 0;
-}
-
 void hfi_send_system_cmd(uint32_t type, uint64_t data, uint32_t size)
 {
 	switch (type) {
 	case HFI_CMD_SYS_INIT: {
 		struct hfi_cmd_sys_init init;
+
+		memset(&init, 0, sizeof(init));
 
 		init.size = sizeof(struct hfi_cmd_sys_init);
 		init.pkt_type = type;
@@ -671,30 +542,113 @@ int hfi_get_hw_caps(void *query_buf)
 	return 0;
 }
 
-int cam_hfi_resume(struct hfi_mem_info *hfi_mem)
+void cam_hfi_disable_cpu(void __iomem *icp_base)
+{
+	uint32_t data;
+	uint32_t val;
+	uint32_t try = 0;
+
+	while (try < HFI_MAX_PC_POLL_TRY) {
+		data = cam_io_r_mb(icp_base + HFI_REG_A5_CSR_A5_STATUS);
+		CAM_DBG(CAM_HFI, "wfi status = %x\n", (int)data);
+
+		if (data & ICP_CSR_A5_STATUS_WFI)
+			break;
+		/* Need to poll here to confirm that FW is going trigger wfi
+		 * and Host can the proceed. No interrupt is expected from FW
+		 * at this time.
+		 */
+		usleep_range(HFI_POLL_TRY_SLEEP * 1000,
+			(HFI_POLL_TRY_SLEEP * 1000) + 1000);
+		try++;
+	}
+
+	val = cam_io_r(icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+	val &= ~(ICP_FLAG_CSR_A5_EN | ICP_FLAG_CSR_WAKE_UP_EN);
+	cam_io_w_mb(val, icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+
+	val = cam_io_r(icp_base + HFI_REG_A5_CSR_NSEC_RESET);
+	cam_io_w_mb(val, icp_base + HFI_REG_A5_CSR_NSEC_RESET);
+
+	cam_io_w_mb((uint32_t)ICP_INIT_REQUEST_RESET,
+		icp_base + HFI_REG_HOST_ICP_INIT_REQUEST);
+	cam_io_w_mb((uint32_t)INTR_DISABLE,
+		icp_base + HFI_REG_A5_CSR_A2HOSTINTEN);
+}
+
+void cam_hfi_enable_cpu(void __iomem *icp_base)
+{
+	cam_io_w_mb((uint32_t)ICP_FLAG_CSR_A5_EN,
+			icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+	cam_io_w_mb((uint32_t)0x10, icp_base + HFI_REG_A5_CSR_NSEC_RESET);
+}
+
+int cam_hfi_resume(struct hfi_mem_info *hfi_mem,
+	void __iomem *icp_base, bool debug)
 {
 	int rc = 0;
+	uint32_t data;
 	uint32_t fw_version, status = 0;
-	void __iomem *icp_base = hfi_iface_addr(g_hfi);
+	uint32_t retry_cnt = 0;
 
-	if (!icp_base) {
-		CAM_ERR(CAM_HFI, "invalid HFI interface address");
+	cam_hfi_enable_cpu(icp_base);
+	g_hfi->csr_base = icp_base;
+
+	if (debug) {
+		cam_io_w_mb(ICP_FLAG_A5_CTRL_DBG_EN,
+			(icp_base + HFI_REG_A5_CSR_A5_CONTROL));
+
+		/* Barrier needed as next write should be done after
+		 * sucessful previous write. Next write enable clock
+		 * gating
+		 */
+		wmb();
+
+		cam_io_w_mb((uint32_t)ICP_FLAG_A5_CTRL_EN,
+			icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+
+	} else {
+		cam_io_w_mb((uint32_t)ICP_FLAG_A5_CTRL_EN,
+			icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+	}
+
+	while (retry_cnt < HFI_MAX_POLL_TRY) {
+		readw_poll_timeout((icp_base + HFI_REG_ICP_HOST_INIT_RESPONSE),
+			status, (status == ICP_INIT_RESP_SUCCESS), 100, 10000);
+
+		CAM_DBG(CAM_HFI, "1: status = %u", status);
+		status = cam_io_r_mb(icp_base + HFI_REG_ICP_HOST_INIT_RESPONSE);
+		CAM_DBG(CAM_HFI, "2: status = %u", status);
+		if (status == ICP_INIT_RESP_SUCCESS)
+			break;
+
+		if (status == ICP_INIT_RESP_FAILED) {
+			CAM_ERR(CAM_HFI, "ICP Init Failed. status = %u",
+				status);
+			fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
+			CAM_ERR(CAM_HFI, "fw version : [%x]", fw_version);
+			return -EINVAL;
+		}
+		retry_cnt++;
+	}
+
+	if ((retry_cnt == HFI_MAX_POLL_TRY) &&
+		(status == ICP_INIT_RESP_RESET)) {
+		CAM_ERR(CAM_HFI, "Reached Max retries. status = %u",
+				status);
+		fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
+		CAM_ERR(CAM_HFI, "fw version : [%x]", fw_version);
 		return -EINVAL;
 	}
 
-	if (cam_common_read_poll_timeout(icp_base +
-		    HFI_REG_ICP_HOST_INIT_RESPONSE,
-		    HFI_POLL_DELAY_US, HFI_POLL_TIMEOUT_US,
-		    (uint32_t)UINT_MAX, ICP_INIT_RESP_SUCCESS, &status)) {
-	    CAM_ERR(CAM_HFI, "response poll timed out: status=0x%08x",
-		    status);
-	    return -ETIMEDOUT;
-	}
-
-	hfi_irq_enable(g_hfi);
+	cam_io_w_mb((uint32_t)(INTR_ENABLE|INTR_ENABLE_WD0),
+		icp_base + HFI_REG_A5_CSR_A2HOSTINTEN);
 
 	fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
 	CAM_DBG(CAM_HFI, "fw version : [%x]", fw_version);
+
+	data = cam_io_r(icp_base + HFI_REG_A5_CSR_A5_STATUS);
+	CAM_DBG(CAM_HFI, "wfi status = %x", (int)data);
 
 	cam_io_w_mb((uint32_t)hfi_mem->qtbl.iova, icp_base + HFI_REG_QTBL_PTR);
 	cam_io_w_mb((uint32_t)hfi_mem->sfr_buf.iova,
@@ -704,9 +658,9 @@ int cam_hfi_resume(struct hfi_mem_info *hfi_mem)
 	cam_io_w_mb((uint32_t)hfi_mem->shmem.len,
 		icp_base + HFI_REG_SHARED_MEM_SIZE);
 	cam_io_w_mb((uint32_t)hfi_mem->sec_heap.iova,
-		icp_base + HFI_REG_SECONDARY_HEAP_PTR);
+		icp_base + HFI_REG_UNCACHED_HEAP_PTR);
 	cam_io_w_mb((uint32_t)hfi_mem->sec_heap.len,
-		icp_base + HFI_REG_SECONDARY_HEAP_SIZE);
+		icp_base + HFI_REG_UNCACHED_HEAP_SIZE);
 	cam_io_w_mb((uint32_t)hfi_mem->qdss.iova,
 		icp_base + HFI_REG_QDSS_IOVA);
 	cam_io_w_mb((uint32_t)hfi_mem->qdss.len,
@@ -721,47 +675,23 @@ int cam_hfi_resume(struct hfi_mem_info *hfi_mem)
 	cam_io_w_mb((uint32_t)hfi_mem->io_mem2.len,
 		icp_base + HFI_REG_IO2_REGION_SIZE);
 
-	cam_io_w_mb((uint32_t)hfi_mem->fw_uncached.iova,
-		icp_base + HFI_REG_FWUNCACHED_REGION_IOVA);
-	cam_io_w_mb((uint32_t)hfi_mem->fw_uncached.len,
-		icp_base + HFI_REG_FWUNCACHED_REGION_SIZE);
-
-	CAM_DBG(CAM_HFI, "IO1 : [0x%x 0x%x] IO2 [0x%x 0x%x]",
+	CAM_INFO(CAM_HFI, "Resume IO1 : [0x%x 0x%x] IO2 [0x%x 0x%x]",
 		hfi_mem->io_mem.iova, hfi_mem->io_mem.len,
 		hfi_mem->io_mem2.iova, hfi_mem->io_mem2.len);
-
-	CAM_DBG(CAM_HFI, "FwUncached : [0x%x 0x%x] Shared [0x%x 0x%x]",
-		hfi_mem->fw_uncached.iova, hfi_mem->fw_uncached.len,
-		hfi_mem->shmem.iova, hfi_mem->shmem.len);
-
-	CAM_DBG(CAM_HFI, "SecHeap : [0x%x 0x%x] QDSS [0x%x 0x%x]",
-		hfi_mem->sec_heap.iova, hfi_mem->sec_heap.len,
-		hfi_mem->qdss.iova, hfi_mem->qdss.len);
-
-	CAM_DBG(CAM_HFI, "QTbl : [0x%x 0x%x] Sfr [0x%x 0x%x]",
-		hfi_mem->qtbl.iova, hfi_mem->qtbl.len,
-		hfi_mem->sfr_buf.iova, hfi_mem->sfr_buf.len);
 
 	return rc;
 }
 
-int cam_hfi_init(struct hfi_mem_info *hfi_mem, const struct hfi_ops *hfi_ops,
-		void *priv, uint8_t event_driven_mode)
+int cam_hfi_init(uint8_t event_driven_mode, struct hfi_mem_info *hfi_mem,
+		void __iomem *icp_base, bool debug)
 {
 	int rc = 0;
-	uint32_t status = 0;
 	struct hfi_qtbl *qtbl;
 	struct hfi_qtbl_hdr *qtbl_hdr;
 	struct hfi_q_hdr *cmd_q_hdr, *msg_q_hdr, *dbg_q_hdr;
+	uint32_t hw_version, fw_version, status = 0;
+	uint32_t retry_cnt = 0;
 	struct sfr_buf *sfr_buffer;
-	void __iomem *icp_base;
-
-	if (!hfi_mem || !hfi_ops || !priv) {
-		CAM_ERR(CAM_HFI,
-			"invalid arg: hfi_mem=%pK hfi_ops=%pK priv=%pK",
-			hfi_mem, hfi_ops, priv);
-		return -EINVAL;
-	}
 
 	mutex_lock(&hfi_cmd_q_mutex);
 	mutex_lock(&hfi_msg_q_mutex);
@@ -776,12 +706,32 @@ int cam_hfi_init(struct hfi_mem_info *hfi_mem, const struct hfi_ops *hfi_ops,
 
 	if (g_hfi->hfi_state != HFI_DEINIT) {
 		CAM_ERR(CAM_HFI, "hfi_init: invalid state");
-		rc = -EINVAL;
-		goto regions_fail;
+		return -EINVAL;
 	}
 
 	memcpy(&g_hfi->map, hfi_mem, sizeof(g_hfi->map));
 	g_hfi->hfi_state = HFI_DEINIT;
+	if (debug) {
+		cam_io_w_mb(
+		(uint32_t)(ICP_FLAG_CSR_A5_EN | ICP_FLAG_CSR_WAKE_UP_EN |
+		ICP_CSR_EDBGRQ | ICP_CSR_DBGSWENABLE),
+		icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+		msleep(100);
+		cam_io_w_mb((uint32_t)(ICP_FLAG_CSR_A5_EN |
+		ICP_FLAG_CSR_WAKE_UP_EN | ICP_CSR_EN_CLKGATE_WFI),
+		icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+	} else {
+		/* Due to hardware bug in V1 ICP clock gating has to be
+		 * disabled, this is supposed to be fixed in V-2. But enabling
+		 * the clock gating is causing the firmware hang, hence
+		 * disabling the clock gating on both V1 and V2 until the
+		 * hardware team root causes this
+		 */
+		cam_io_w_mb((uint32_t)ICP_FLAG_CSR_A5_EN |
+			ICP_FLAG_CSR_WAKE_UP_EN |
+			ICP_CSR_EN_CLKGATE_WFI,
+			icp_base + HFI_REG_A5_CSR_A5_CONTROL);
+	}
 
 	qtbl = (struct hfi_qtbl *)hfi_mem->qtbl.kva;
 	qtbl_hdr = &qtbl->q_tbl_hdr;
@@ -897,16 +847,6 @@ int cam_hfi_init(struct hfi_mem_info *hfi_mem, const struct hfi_ops *hfi_ops,
 		break;
 	}
 
-	g_hfi->ops = *hfi_ops;
-	g_hfi->priv = priv;
-
-	icp_base = hfi_iface_addr(g_hfi);
-	if (!icp_base) {
-		CAM_ERR(CAM_HFI, "invalid HFI interface address");
-		rc = -EINVAL;
-		goto regions_fail;
-	}
-
 	cam_io_w_mb((uint32_t)hfi_mem->qtbl.iova,
 		icp_base + HFI_REG_QTBL_PTR);
 	cam_io_w_mb((uint32_t)hfi_mem->sfr_buf.iova,
@@ -916,9 +856,11 @@ int cam_hfi_init(struct hfi_mem_info *hfi_mem, const struct hfi_ops *hfi_ops,
 	cam_io_w_mb((uint32_t)hfi_mem->shmem.len,
 		icp_base + HFI_REG_SHARED_MEM_SIZE);
 	cam_io_w_mb((uint32_t)hfi_mem->sec_heap.iova,
-		icp_base + HFI_REG_SECONDARY_HEAP_PTR);
+		icp_base + HFI_REG_UNCACHED_HEAP_PTR);
 	cam_io_w_mb((uint32_t)hfi_mem->sec_heap.len,
-		icp_base + HFI_REG_SECONDARY_HEAP_SIZE);
+		icp_base + HFI_REG_UNCACHED_HEAP_SIZE);
+	cam_io_w_mb((uint32_t)ICP_INIT_REQUEST_SET,
+		icp_base + HFI_REG_HOST_ICP_INIT_REQUEST);
 	cam_io_w_mb((uint32_t)hfi_mem->qdss.iova,
 		icp_base + HFI_REG_QDSS_IOVA);
 	cam_io_w_mb((uint32_t)hfi_mem->qdss.len,
@@ -931,54 +873,54 @@ int cam_hfi_init(struct hfi_mem_info *hfi_mem, const struct hfi_ops *hfi_ops,
 		icp_base + HFI_REG_IO2_REGION_IOVA);
 	cam_io_w_mb((uint32_t)hfi_mem->io_mem2.len,
 		icp_base + HFI_REG_IO2_REGION_SIZE);
-	cam_io_w_mb((uint32_t)hfi_mem->fw_uncached.iova,
-		icp_base + HFI_REG_FWUNCACHED_REGION_IOVA);
-	cam_io_w_mb((uint32_t)hfi_mem->fw_uncached.len,
-		icp_base + HFI_REG_FWUNCACHED_REGION_SIZE);
 
-	CAM_DBG(CAM_HFI, "IO1 : [0x%x 0x%x] IO2 [0x%x 0x%x]",
+	CAM_INFO(CAM_HFI, "Init IO1 : [0x%x 0x%x] IO2 [0x%x 0x%x]",
 		hfi_mem->io_mem.iova, hfi_mem->io_mem.len,
 		hfi_mem->io_mem2.iova, hfi_mem->io_mem2.len);
 
-	CAM_DBG(CAM_HFI, "FwUncached : [0x%x 0x%x] Shared [0x%x 0x%x]",
-		hfi_mem->fw_uncached.iova, hfi_mem->fw_uncached.len,
-		hfi_mem->shmem.iova, hfi_mem->shmem.len);
+	hw_version = cam_io_r(icp_base + HFI_REG_A5_HW_VERSION);
 
-	CAM_DBG(CAM_HFI, "SecHeap : [0x%x 0x%x] QDSS [0x%x 0x%x]",
-		hfi_mem->sec_heap.iova, hfi_mem->sec_heap.len,
-		hfi_mem->qdss.iova, hfi_mem->qdss.len);
+	while (retry_cnt < HFI_MAX_POLL_TRY) {
+		readw_poll_timeout((icp_base + HFI_REG_ICP_HOST_INIT_RESPONSE),
+			status, (status == ICP_INIT_RESP_SUCCESS), 100, 10000);
 
-	CAM_DBG(CAM_HFI, "QTbl : [0x%x 0x%x] Sfr [0x%x 0x%x]",
-		hfi_mem->qtbl.iova, hfi_mem->qtbl.len,
-		hfi_mem->sfr_buf.iova, hfi_mem->sfr_buf.len);
+		CAM_DBG(CAM_HFI, "1: status = %u rc = %d", status, rc);
+		status = cam_io_r_mb(icp_base + HFI_REG_ICP_HOST_INIT_RESPONSE);
+		CAM_DBG(CAM_HFI, "2: status = %u rc = %d", status, rc);
+		if (status == ICP_INIT_RESP_SUCCESS)
+			break;
 
-	if (cam_presil_mode_enabled())
-		cam_hfi_presil_setup(hfi_mem);
+		if (status == ICP_INIT_RESP_FAILED) {
+			CAM_ERR(CAM_HFI, "ICP Init Failed. status = %u",
+				status);
+			fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
+			CAM_ERR(CAM_HFI, "fw version : [%x]", fw_version);
+			goto regions_fail;
+		}
+		retry_cnt++;
+	}
 
-	cam_io_w_mb((uint32_t)ICP_INIT_REQUEST_SET,
-		icp_base + HFI_REG_HOST_ICP_INIT_REQUEST);
-
-	if (cam_presil_mode_enabled())
-		cam_hfi_presil_set_init_request();
-
-	if (cam_common_read_poll_timeout(icp_base +
-		    HFI_REG_ICP_HOST_INIT_RESPONSE,
-		    HFI_POLL_DELAY_US, HFI_POLL_TIMEOUT_US,
-		    (uint32_t)UINT_MAX, ICP_INIT_RESP_SUCCESS, &status)) {
-		CAM_ERR(CAM_HFI, "response poll timed out: status=0x%08x",
-			status);
-		rc = -ETIMEDOUT;
+	if ((retry_cnt == HFI_MAX_POLL_TRY) &&
+		(status == ICP_INIT_RESP_RESET)) {
+		CAM_ERR(CAM_HFI, "Reached Max retries. status = %u",
+				status);
+		fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
+		CAM_ERR(CAM_HFI,
+			"hw version : : [%x], fw version : [%x]",
+			hw_version, fw_version);
 		goto regions_fail;
 	}
 
-	CAM_DBG(CAM_HFI, "ICP fw version: 0x%x",
-		cam_io_r(icp_base + HFI_REG_FW_VERSION));
+	fw_version = cam_io_r(icp_base + HFI_REG_FW_VERSION);
+	CAM_DBG(CAM_HFI, "hw version : : [%x], fw version : [%x]",
+		hw_version, fw_version);
 
+	g_hfi->csr_base = icp_base;
 	g_hfi->hfi_state = HFI_READY;
 	g_hfi->cmd_q_state = true;
 	g_hfi->msg_q_state = true;
-
-	hfi_irq_enable(g_hfi);
+	cam_io_w_mb((uint32_t)(INTR_ENABLE|INTR_ENABLE_WD0),
+		icp_base + HFI_REG_A5_CSR_A2HOSTINTEN);
 
 	mutex_unlock(&hfi_cmd_q_mutex);
 	mutex_unlock(&hfi_msg_q_mutex);
@@ -993,13 +935,8 @@ alloc_fail:
 	return rc;
 }
 
-void cam_hfi_deinit(void)
+void cam_hfi_deinit(void __iomem *icp_base)
 {
-	if (cam_presil_mode_enabled()) {
-		CAM_DBG(CAM_HFI, "SYS_RESET Needed in presil for back to back hfi_init success");
-		hfi_send_system_cmd(HFI_CMD_SYS_RESET, 0, 0);
-	}
-
 	mutex_lock(&hfi_cmd_q_mutex);
 	mutex_lock(&hfi_msg_q_mutex);
 
@@ -1018,105 +955,3 @@ err:
 	mutex_unlock(&hfi_cmd_q_mutex);
 	mutex_unlock(&hfi_msg_q_mutex);
 }
-
-
-#ifdef CONFIG_CAM_PRESIL
-static int cam_hfi_presil_setup(struct hfi_mem_info *hfi_mem)
-{
-	/**
-	 * The pchost maintains its own set of queue structures and
-	 * needs additional info to accomplish this. Use the set of
-	 * dummy registers to pass along this info.
-	 */
-	/**
-	 * IOVA region length for each queue is currently hardcoded in
-	 * pchost (except for SFR). No need to send for now.
-	 */
-	cam_presil_send_event(CAM_PRESIL_EVENT_HFI_REG_CMD_Q_IOVA, hfi_mem->cmd_q.iova);
-	cam_presil_send_event(CAM_PRESIL_EVENT_HFI_REG_MSG_Q_IOVA, hfi_mem->msg_q.iova);
-	cam_presil_send_event(CAM_PRESIL_EVENT_HFI_REG_DBG_Q_IOVA, hfi_mem->dbg_q.iova);
-	cam_presil_send_event(CAM_PRESIL_EVENT_HFI_REG_SFR_LEN, hfi_mem->sfr_buf.len);
-
-	return 0;
-}
-
-static int cam_hfi_presil_set_init_request(void)
-{
-	CAM_DBG(CAM_PRESIL, "notifying pchost to start HFI init...");
-	cam_presil_send_event(CAM_PRESIL_EVENT_HFI_REG_ICP_V1_HW_VERSION_TO_START_HFI_INIT, 0xFF);
-	CAM_DBG(CAM_PRESIL, "got done with PCHOST HFI init...");
-
-	return 0;
-}
-
-int hfi_write_cmd(void *cmd_ptr)
-{
-	int presil_rc = CAM_PRESIL_BLOCKED;
-	int rc = 0;
-
-	if (!cmd_ptr) {
-		CAM_ERR(CAM_HFI, "command is null");
-		return -EINVAL;
-	}
-
-	mutex_lock(&hfi_cmd_q_mutex);
-
-	presil_rc = cam_presil_hfi_write_cmd(cmd_ptr, (*(uint32_t *)cmd_ptr),
-		CAM_PRESIL_CLIENT_ID_CAMERA);
-
-	if ((presil_rc != CAM_PRESIL_SUCCESS) && (presil_rc != CAM_PRESIL_BLOCKED)) {
-		CAM_ERR(CAM_HFI, "failed presil rc %d", presil_rc);
-		rc = -EINVAL;
-	} else {
-		CAM_DBG(CAM_HFI, "presil rc %d", presil_rc);
-	}
-
-	mutex_unlock(&hfi_cmd_q_mutex);
-	return rc;
-}
-
-int hfi_read_message(uint32_t *pmsg, uint8_t q_id,
-	uint32_t *words_read)
-{
-	int presil_rc = CAM_PRESIL_BLOCKED;
-	int rc = 0;
-
-	if (!pmsg) {
-		CAM_ERR(CAM_HFI, "Invalid msg");
-		return -EINVAL;
-	}
-
-	if (q_id > Q_DBG) {
-		CAM_ERR(CAM_HFI, "Invalid q :%u", q_id);
-		return -EINVAL;
-	}
-	mutex_lock(&hfi_msg_q_mutex);
-
-	memset(pmsg, 0x0, sizeof(uint32_t) * 256 /* ICP_MSG_BUF_SIZE */);
-	*words_read = 0;
-
-	presil_rc = cam_presil_hfi_read_message(pmsg, q_id, words_read,
-		CAM_PRESIL_CLIENT_ID_CAMERA);
-
-	if ((presil_rc != CAM_PRESIL_SUCCESS) && (presil_rc != CAM_PRESIL_BLOCKED)) {
-		CAM_ERR(CAM_HFI, "failed presil rc %d", presil_rc);
-		rc = -EINVAL;
-	} else {
-		CAM_DBG(CAM_HFI, "presil rc %d", presil_rc);
-	}
-
-	mutex_unlock(&hfi_msg_q_mutex);
-	return rc;
-}
-#else
-/* when presil mode not enabled */
-static int cam_hfi_presil_setup(struct hfi_mem_info *hfi_mem)
-{
-	return 0;
-}
-
-static int cam_hfi_presil_set_init_request(void)
-{
-	return 0;
-}
-#endif /* #ifdef CONFIG_CAM_PRESIL */

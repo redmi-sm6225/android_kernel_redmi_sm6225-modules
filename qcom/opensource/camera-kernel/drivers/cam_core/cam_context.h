@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_CONTEXT_H_
@@ -10,11 +9,8 @@
 #include <linux/mutex.h>
 #include <linux/spinlock_types.h>
 #include <linux/kref.h>
-#include <media/v4l2-subdev.h>
 #include "cam_req_mgr_interface.h"
 #include "cam_hw_mgr_intf.h"
-#include "cam_smmu_api.h"
-#include "cam_common_util.h"
 
 /* Forward declarations */
 struct cam_context;
@@ -24,12 +20,11 @@ struct cam_context;
 
 /* max request number */
 #define CAM_CTX_REQ_MAX              20
-#define CAM_CTX_ICP_REQ_MAX          40
 #define CAM_CTX_CFG_MAX              20
 #define CAM_CTX_RES_MAX              20
 
 /* max tag  dump header string length*/
-#define CAM_CTXT_DUMP_TAG_MAX_LEN 64
+#define CAM_CTXT_DUMP_TAG_MAX_LEN 32
 
 /* Number of words to be dumped for context*/
 #define CAM_CTXT_DUMP_NUM_WORDS 10
@@ -63,29 +58,27 @@ enum cam_context_state {
  * @num_out_map_entries:   Number of out map entries
  * @num_in_acked:          Number of in fence acked
  * @num_out_acked:         Number of out fence acked
- * @index:                 Index of request in the list
  * @flushed:               Request is flushed
  * @ctx:                   The context to which this request belongs
  * @pf_data                page fault debug data
  *
  */
 struct cam_ctx_request {
-	struct list_head                  list;
-	uint32_t                          status;
-	uint64_t                          request_id;
-	void                             *req_priv;
-	struct cam_hw_update_entry       *hw_update_entries;
-	uint32_t                          num_hw_update_entries;
-	struct cam_hw_fence_map_entry    *in_map_entries;
-	uint32_t                          num_in_map_entries;
-	struct cam_hw_fence_map_entry    *out_map_entries;
-	uint32_t                          num_out_map_entries;
-	atomic_t                          num_in_acked;
-	uint32_t                          num_out_acked;
-	uint32_t                          index;
-	int                               flushed;
-	struct cam_context               *ctx;
-	struct cam_hw_mgr_pf_request_info pf_data;
+	struct list_head               list;
+	uint32_t                       status;
+	uint64_t                       request_id;
+	void                          *req_priv;
+	struct cam_hw_update_entry     hw_update_entries[CAM_CTX_CFG_MAX];
+	uint32_t                       num_hw_update_entries;
+	struct cam_hw_fence_map_entry  in_map_entries[CAM_CTX_CFG_MAX];
+	uint32_t                       num_in_map_entries;
+	struct cam_hw_fence_map_entry  out_map_entries[CAM_CTX_CFG_MAX];
+	uint32_t                       num_out_map_entries;
+	atomic_t                       num_in_acked;
+	uint32_t                       num_out_acked;
+	int                            flushed;
+	struct cam_context            *ctx;
+	struct cam_hw_mgr_dump_pf_data pf_data;
 };
 
 /**
@@ -128,7 +121,6 @@ struct cam_ctx_ioctl_ops {
  * @link:                  Link the context
  * @unlink:                Unlink the context
  * @apply_req:             Apply setting for the context
- * @notify_frame_skip:     Notify device that a frame is skipped
  * @flush_req:             Flush request to remove request ids
  * @process_evt:           Handle event notification from CRM.(optional)
  * @dump_req:              Dump information for the issue request
@@ -142,8 +134,6 @@ struct cam_ctx_crm_ops {
 	int (*unlink)(struct cam_context *ctx,
 			struct cam_req_mgr_core_dev_link_setup *unlink);
 	int (*apply_req)(struct cam_context *ctx,
-			struct cam_req_mgr_apply_request *apply);
-	int (*notify_frame_skip)(struct cam_context *ctx,
 			struct cam_req_mgr_apply_request *apply);
 	int (*flush_req)(struct cam_context *ctx,
 			struct cam_req_mgr_flush_request *flush);
@@ -163,11 +153,6 @@ struct cam_ctx_crm_ops {
  * @pagefault_ops:         Function to be called on page fault
  * @dumpinfo_ops:          Function to be invoked for dumping any
  *                         context info
- * @recovery_ops:          Function to be invoked to try hardware recovery
- * @mini_dump_ops:         Function for mini dump
- * @err_inject_ops:        Function for error injection
- * @msg_cb_ops:            Function to be called on any message from
- *                         other subdev notifications
  *
  */
 struct cam_ctx_ops {
@@ -176,12 +161,7 @@ struct cam_ctx_ops {
 	cam_hw_event_cb_func         irq_ops;
 	cam_hw_pagefault_cb_func     pagefault_ops;
 	cam_ctx_info_dump_cb_func    dumpinfo_ops;
-	cam_ctx_recovery_cb_func     recovery_ops;
-	cam_ctx_mini_dump_cb_func    mini_dump_ops;
-	cam_ctx_err_inject_cb_func   err_inject_ops;
-	cam_ctx_message_cb_func      msg_cb_ops;
 };
-
 
 /**
  * struct cam_context - camera context object for the subdevice node
@@ -209,21 +189,10 @@ struct cam_ctx_ops {
  * @state_machine:         Top level state machine
  * @ctx_priv:              Private context pointer
  * @ctxt_to_hw_map:        Context to hardware mapping pointer
- * @hw_mgr_ctx_id:         Hw Mgr context id returned from hw mgr
- * @ctx_id_string:         Context id string constructed with dev type,
- *                         ctx id, hw mgr ctx id
  * @refcount:              Context object refcount
  * @node:                  The main node to which this context belongs
  * @sync_mutex:            mutex to sync with sync cb thread
  * @last_flush_req:        Last request to flush
- * @max_hw_update_entries: Max hw update entries
- * @max_in_map_entries:    Max in map entries
- * @max_out_map_entries:   Max out in map entries
- * @hw_updater_entry:      Hw update entry
- * @in_map_entries:        In map update entry
- * @out_map_entries:       Out map entry
- * @mini dump cb:          Mini dump cb
- * @img_iommu_hdl:         Image IOMMU handle
  *
  */
 struct cam_context {
@@ -238,38 +207,28 @@ struct cam_context {
 	struct mutex                 ctx_mutex;
 	spinlock_t                   lock;
 
-	struct list_head               active_req_list;
-	struct list_head               pending_req_list;
-	struct list_head               wait_req_list;
-	struct list_head               free_req_list;
-	struct cam_ctx_request        *req_list;
-	uint32_t                       req_size;
+	struct list_head             active_req_list;
+	struct list_head             pending_req_list;
+	struct list_head             wait_req_list;
+	struct list_head             free_req_list;
+	struct cam_ctx_request      *req_list;
+	uint32_t                     req_size;
 
-	struct cam_hw_mgr_intf        *hw_mgr_intf;
-	struct cam_req_mgr_crm_cb     *ctx_crm_intf;
-	struct cam_req_mgr_kmd_ops    *crm_ctx_intf;
-	cam_hw_event_cb_func           irq_cb_intf;
+	struct cam_hw_mgr_intf      *hw_mgr_intf;
+	struct cam_req_mgr_crm_cb   *ctx_crm_intf;
+	struct cam_req_mgr_kmd_ops  *crm_ctx_intf;
+	cam_hw_event_cb_func         irq_cb_intf;
 
-	enum cam_context_state         state;
-	struct cam_ctx_ops            *state_machine;
+	enum cam_context_state       state;
+	struct cam_ctx_ops          *state_machine;
 
-	void                          *ctx_priv;
-	void                          *ctxt_to_hw_map;
-	uint32_t                       hw_mgr_ctx_id;
-	char                           ctx_id_string[128];
+	void                        *ctx_priv;
+	void                        *ctxt_to_hw_map;
 
-	struct kref                    refcount;
-	void                          *node;
-	struct mutex                   sync_mutex;
-	uint32_t                       last_flush_req;
-	uint32_t                       max_hw_update_entries;
-	uint32_t                       max_in_map_entries;
-	uint32_t                       max_out_map_entries;
-	struct cam_hw_update_entry    **hw_update_entry;
-	struct cam_hw_fence_map_entry **in_map_entries;
-	struct cam_hw_fence_map_entry **out_map_entries;
-	cam_ctx_mini_dump_cb_func      mini_dump_cb;
-	int                            img_iommu_hdl;
+	struct kref                  refcount;
+	void                        *node;
+	struct mutex                 sync_mutex;
+	uint32_t                     last_flush_req;
 };
 
 /**
@@ -344,18 +303,6 @@ int cam_context_handle_crm_apply_req(struct cam_context *ctx,
 		struct cam_req_mgr_apply_request *apply);
 
 /**
- * cam_context_handle_crm_notify_frame_skip()
- *
- * @brief:        Handle notify frame skip command
- *
- * @ctx:          Object pointer for cam_context
- * @apply:        Notify frame skip command payload
- *
- */
-int cam_context_handle_crm_notify_frame_skip(
-	struct cam_context *ctx, struct cam_req_mgr_apply_request *apply);
-
-/**
  * cam_context_handle_crm_flush_req()
  *
  * @brief:        Handle flush request command
@@ -392,41 +339,17 @@ int cam_context_handle_crm_dump_req(struct cam_context *ctx,
 	struct cam_req_mgr_dump_info *dump);
 
 /**
- * cam_context_mini_dump_from_hw()
- *
- * @brief:        Handle mini dump request command
- *
- * @ctx:          Object pointer for cam_context
- * @args:         Args to be passed
- *
- */
-int cam_context_mini_dump_from_hw(struct cam_context *ctx,
-	void  *args);
-
-/**
  * cam_context_dump_pf_info()
  *
  * @brief:        Handle dump active request request command
  *
  * @ctx:          Object pointer for cam_context
- * @pf_args:      pf args to dump pf info to hw
+ * @iova:         Page fault address
+ * @buf_info:     Information about closest memory handle
  *
  */
-int cam_context_dump_pf_info(void *ctx,
-	void *pf_args);
-
-/**
- * cam_context_handle_message()
- *
- * @brief:        Handle message callback command
- *
- * @ctx:          Object pointer for cam_context
- * @msg_type:     message type sent from other subdev
- * @data:         data from other subdev
- *
- */
-int cam_context_handle_message(struct cam_context *ctx,
-	uint32_t msg_type, void *data);
+int cam_context_dump_pf_info(struct cam_context *ctx, unsigned long iova,
+	uint32_t buf_info);
 
 /**
  * cam_context_handle_acquire_dev()
@@ -550,18 +473,6 @@ int cam_context_handle_info_dump(void *context,
 	enum cam_context_dump_id id);
 
 /**
- * cam_context_handle_hw_recovery()
- *
- * @brief:        Handle hardware recovery. This function can be scheduled in
- *                cam_req_mgr_workq.
- *
- * @context:      Object pointer for cam_context
- * @data:         Recovery data that is to be passsed to hw mgr
- *
- */
-int cam_context_handle_hw_recovery(void *context, void *data);
-
-/**
  * cam_context_deinit()
  *
  * @brief:        Camera context deinitialize function
@@ -584,7 +495,6 @@ int cam_context_deinit(struct cam_context *ctx);
  * @hw_mgr_intf:           Function table for context to hw interface
  * @req_list:              Requests storage
  * @req_size:              Size of the request storage
- * @img_iommu_hdl:         IOMMU Handle for image buffers
  *
  */
 int cam_context_init(struct cam_context *ctx,
@@ -594,7 +504,7 @@ int cam_context_init(struct cam_context *ctx,
 		struct cam_req_mgr_kmd_ops *crm_node_intf,
 		struct cam_hw_mgr_intf *hw_mgr_intf,
 		struct cam_ctx_request *req_list,
-		uint32_t req_size, int img_iommu_hdl);
+		uint32_t req_size);
 
 /**
  * cam_context_putref()
@@ -615,18 +525,5 @@ void cam_context_putref(struct cam_context *ctx);
  *
  */
 void cam_context_getref(struct cam_context *ctx);
-
-/**
- * cam_context_add_err_inject()
- *
- * @brief:     Add error inject parameters through err_inject_ops.
- *
- * @ctx:       Context for which error is to be injected
- *
- * @err_param: Error injection parameters
- *
- */
-int cam_context_add_err_inject(struct cam_context *ctx,
-	void *err_param);
 
 #endif  /* _CAM_CONTEXT_H_ */

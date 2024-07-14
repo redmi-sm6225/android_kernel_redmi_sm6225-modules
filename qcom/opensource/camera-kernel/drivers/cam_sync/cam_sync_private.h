@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __CAM_SYNC_PRIVATE_H__
@@ -17,12 +16,6 @@
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
-#include "cam_sync_api.h"
-#include "cam_sync_dma_fence.h"
-
-#if IS_REACHABLE(CONFIG_MSM_GLOBAL_SYNX)
-#include <synx_api.h>
-#endif
 
 #ifdef CONFIG_CAM_SYNC_DBG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -31,9 +24,8 @@
 #endif
 
 #define CAM_SYNC_OBJ_NAME_LEN           64
-#define CAM_SYNC_MAX_OBJS               2048
-#define CAM_GENERIC_FENCE_BATCH_MAX     10
-#define CAM_SYNC_MAX_V4L2_EVENTS        250
+#define CAM_SYNC_MAX_OBJS               1024
+#define CAM_SYNC_MAX_V4L2_EVENTS        200
 #define CAM_SYNC_DEBUG_FILENAME         "cam_debug"
 #define CAM_SYNC_DEBUG_BASEDIR          "cam"
 #define CAM_SYNC_DEBUG_BUF_SIZE         32
@@ -128,37 +120,21 @@ struct sync_user_payload {
 };
 
 /**
- * struct sync_dma_fence_info - DMA fence info associated with this sync obj
- *
- * @dma_fence_fd          : DMA fence fd
- * @dma_fence_row_idx     : Index of the row corresponding to this dma fence
- *                          in the dma fence table
- * @sync_created_with_dma : If sync obj and dma fence are created together
- */
-struct sync_dma_fence_info {
-	int32_t dma_fence_fd;
-	int32_t dma_fence_row_idx;
-	bool    sync_created_with_dma;
-};
-
-/**
  * struct sync_table_row - Single row of information about a sync object, used
  * for internal book keeping in the sync driver
  *
- * @name               : Optional string representation of the sync object
- * @type               : Type of the sync object (individual or group)
- * @sync_id            : Integer id representing this sync object
- * @parents_list       : Linked list of parents of this sync object
- * @children_list      : Linked list of children of this sync object
- * @state              : State (INVALID, ACTIVE, SIGNALED_SUCCESS or
- *                       SIGNALED_ERROR)
- * @remaining          : Count of remaining children that not been signaled
- * @signaled           : Completion variable on which block calls will wait
- * @callback_list      : Linked list of kernel callbacks registered
- * @user_payload_list  : LInked list of user space payloads registered
- * @ref_cnt            : ref count of the number of usage of the fence.
- * @ext_fence_mask     : Mask to indicate associated external fence types
- * @dma_fence_info     : dma fence info if associated
+ * @name              : Optional string representation of the sync object
+ * @type              : Type of the sync object (individual or group)
+ * @sync_id           : Integer id representing this sync object
+ * @parents_list      : Linked list of parents of this sync object
+ * @children_list     : Linked list of children of this sync object
+ * @state             : State (INVALID, ACTIVE, SIGNALED_SUCCESS or
+ *                      SIGNALED_ERROR)
+ * @remaining         : Count of remaining children that not been signaled
+ * @signaled          : Completion variable on which block calls will wait
+ * @callback_list     : Linked list of kernel callbacks registered
+ * @user_payload_list : LInked list of user space payloads registered
+ * @ref_cnt           : ref count of the number of usage of the fence.
  */
 struct sync_table_row {
 	char name[CAM_SYNC_OBJ_NAME_LEN];
@@ -174,8 +150,6 @@ struct sync_table_row {
 	struct list_head callback_list;
 	struct list_head user_payload_list;
 	atomic_t ref_cnt;
-	unsigned long ext_fence_mask;
-	struct sync_dma_fence_info dma_fence_info;
 };
 
 /**
@@ -205,13 +179,11 @@ struct cam_signalable_info {
  * @work_queue      : Work queue used for dispatching kernel callbacks
  * @cam_sync_eventq : Event queue used to dispatch user payloads to user space
  * @bitmap          : Bitmap representation of all sync objects
- * @params          : Parameters for synx call back registration
- * @version         : version support
  */
 struct sync_device {
 	struct video_device *vdev;
 	struct v4l2_device v4l2_dev;
-	struct sync_table_row *sync_table;
+	struct sync_table_row sync_table[CAM_SYNC_MAX_OBJS];
 	spinlock_t row_spinlocks[CAM_SYNC_MAX_OBJS];
 	struct mutex table_lock;
 	int open_cnt;
@@ -220,10 +192,6 @@ struct sync_device {
 	struct v4l2_fh *cam_sync_eventq;
 	spinlock_t cam_sync_eventq_lock;
 	DECLARE_BITMAP(bitmap, CAM_SYNC_MAX_OBJS);
-#if IS_REACHABLE(CONFIG_MSM_GLOBAL_SYNX)
-	struct synx_register_params params;
-#endif
-	uint32_t version;
 };
 
 

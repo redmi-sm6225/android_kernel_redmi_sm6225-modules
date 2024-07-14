@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_CSID_PPI_HW_H_
@@ -9,7 +9,7 @@
 #include "cam_hw.h"
 #include "cam_hw_intf.h"
 
-#define CAM_CSID_PPI_HW_MAX      6
+#define CAM_CSID_PPI_HW_MAX      4
 #define CAM_CSID_PPI_LANES_MAX   3
 
 #define PPI_IRQ_RST_DONE                   BIT(0)

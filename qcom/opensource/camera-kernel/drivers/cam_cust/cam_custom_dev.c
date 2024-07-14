@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/module.h>
+#include <linux/ion.h>
 #include <linux/iommu.h>
 #include <linux/timer.h>
 #include <linux/kernel.h>
-#include <dt-bindings/msm-camera.h>
 
 #include <media/cam_req_mgr.h>
 
@@ -21,27 +20,26 @@
 #include "cam_node.h"
 #include "cam_debug_util.h"
 #include "cam_smmu_api.h"
-#include "cam_compat.h"
-#include "camera_main.h"
 
 static struct cam_custom_dev g_custom_dev;
-static uint32_t cam_num_custom;
 
 static void cam_custom_dev_iommu_fault_handler(
-	struct cam_smmu_pf_info *pf_info)
+	struct iommu_domain *domain, struct device *dev, unsigned long iova,
+	int flags, void *token, uint32_t buf_info)
 {
 	int i = 0;
 	struct cam_node *node = NULL;
 
-	if (!pf_info || !pf_info->token) {
+	if (!token) {
 		CAM_ERR(CAM_CUSTOM, "invalid token in page handler cb");
 		return;
 	}
 
-	node = (struct cam_node *)pf_info->token;
+	node = (struct cam_node *)token;
 
 	for (i = 0; i < node->ctx_size; i++)
-		cam_context_dump_pf_info(&(node->ctx_list[i]), pf_info);
+		cam_context_dump_pf_info(&(node->ctx_list[i]), iova,
+			buf_info);
 }
 
 static const struct of_device_id cam_custom_dt_match[] = {
@@ -61,7 +59,7 @@ static int cam_custom_subdev_open(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int cam_custom_subdev_close_internal(struct v4l2_subdev *sd,
+static int cam_custom_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	int rc = 0;
@@ -89,41 +87,41 @@ end:
 	return rc;
 }
 
-static int cam_custom_subdev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_CUSTOM, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-
-	return cam_custom_subdev_close_internal(sd, fh);
-}
-
 static const struct v4l2_subdev_internal_ops cam_custom_subdev_internal_ops = {
 	.close = cam_custom_subdev_close,
 	.open = cam_custom_subdev_open,
 };
 
-static int cam_custom_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_custom_dev_remove(struct platform_device *pdev)
+{
+	int rc = 0;
+	int i;
+
+	/* clean up resources */
+	for (i = 0; i < CAM_CUSTOM_HW_MAX_INSTANCES; i++) {
+		rc = cam_custom_dev_context_deinit(&g_custom_dev.ctx_custom[i]);
+		if (rc)
+			CAM_ERR(CAM_CUSTOM,
+				"Custom context %d deinit failed", i);
+	}
+
+	rc = cam_subdev_remove(&g_custom_dev.sd);
+	if (rc)
+		CAM_ERR(CAM_CUSTOM, "Unregister failed");
+
+	memset(&g_custom_dev, 0, sizeof(g_custom_dev));
+	return 0;
+}
+
+static int cam_custom_dev_probe(struct platform_device *pdev)
 {
 	int rc = -EINVAL;
 	int i;
 	struct cam_hw_mgr_intf         hw_mgr_intf;
-	struct cam_node                *node;
+	struct cam_node               *node;
 	int iommu_hdl = -1;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	g_custom_dev.sd.internal_ops = &cam_custom_subdev_internal_ops;
-	g_custom_dev.sd.close_seq_prior = CAM_SD_CLOSE_HIGH_PRIORITY;
-
-	if (!cam_cpas_is_feature_supported(CAM_CPAS_CUSTOM_FUSE, BIT(0), NULL)) {
-		CAM_DBG(CAM_CUSTOM, "CUSTOM:0 is not supported");
-		goto err;
-	}
 
 	rc = cam_subdev_probe(&g_custom_dev.sd, pdev, CAM_CUSTOM_DEV_NAME,
 		CAM_CUSTOM_DEVICE_TYPE);
@@ -146,7 +144,7 @@ static int cam_custom_component_bind(struct device *dev,
 			&g_custom_dev.ctx[i],
 			&node->crm_node_intf,
 			&node->hw_mgr_intf,
-			i, iommu_hdl);
+			i);
 		if (rc) {
 			CAM_ERR(CAM_CUSTOM, "Custom context init failed!");
 			goto unregister;
@@ -160,13 +158,12 @@ static int cam_custom_component_bind(struct device *dev,
 		goto unregister;
 	}
 
-	node->sd_handler = cam_custom_subdev_close_internal;
 	cam_smmu_set_client_page_fault_handler(iommu_hdl,
 		cam_custom_dev_iommu_fault_handler, node);
 
 	mutex_init(&g_custom_dev.custom_dev_mutex);
 
-	CAM_DBG(CAM_CUSTOM, "%s component bound successfully", pdev->name);
+	CAM_DBG(CAM_CUSTOM, "Camera custom HW probe complete");
 
 	return 0;
 unregister:
@@ -175,61 +172,8 @@ err:
 	return rc;
 }
 
-void cam_custom_get_num_custom(uint32_t *custom_num)
-{
-	if (custom_num)
-		*custom_num = cam_num_custom;
-	else
-		CAM_ERR(CAM_CUSTOM, "Failed to update number of custom");
-}
 
-static void cam_custom_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
-{
-	int rc = 0;
-	int i;
-
-	/* clean up resources */
-	for (i = 0; i < CAM_CUSTOM_HW_MAX_INSTANCES; i++) {
-		rc = cam_custom_dev_context_deinit(&g_custom_dev.ctx_custom[i]);
-		if (rc)
-			CAM_ERR(CAM_CUSTOM,
-				"Custom context %d deinit failed", i);
-	}
-
-	rc = cam_subdev_remove(&g_custom_dev.sd);
-	if (rc)
-		CAM_ERR(CAM_CUSTOM, "Unregister failed");
-
-	memset(&g_custom_dev, 0, sizeof(g_custom_dev));
-}
-
-const static struct component_ops cam_custom_component_ops = {
-	.bind = cam_custom_component_bind,
-	.unbind = cam_custom_component_unbind,
-};
-
-static int cam_custom_dev_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_custom_component_ops);
-	return 0;
-}
-
-static int cam_custom_dev_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_CUSTOM, "Adding Custom HW component");
-	cam_num_custom++;
-
-	rc = component_add(&pdev->dev, &cam_custom_component_ops);
-	if (rc)
-		CAM_ERR(CAM_CUSTOM, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
-struct platform_driver custom_driver = {
+static struct platform_driver custom_driver = {
 	.probe = cam_custom_dev_probe,
 	.remove = cam_custom_dev_remove,
 	.driver = {

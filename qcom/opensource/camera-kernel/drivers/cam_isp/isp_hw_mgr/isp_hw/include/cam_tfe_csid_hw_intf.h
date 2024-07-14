@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_TFE_CSID_HW_INTF_H_
@@ -9,10 +8,9 @@
 
 #include "cam_isp_hw.h"
 #include "cam_hw_intf.h"
-#include "cam_tfe.h"
 
 /* MAX TFE CSID instance */
-#define CAM_TFE_CSID_HW_NUM_MAX                        4
+#define CAM_TFE_CSID_HW_NUM_MAX                        3
 #define CAM_TFE_CSID_RDI_MAX                           3
 
 /**
@@ -23,7 +21,6 @@ enum cam_tfe_csid_path_res_id {
 	CAM_TFE_CSID_PATH_RES_RDI_1,
 	CAM_TFE_CSID_PATH_RES_RDI_2,
 	CAM_TFE_CSID_PATH_RES_IPP,
-	CAM_TFE_CSID_PATH_RES_PPP,
 	CAM_TFE_CSID_PATH_RES_MAX,
 };
 
@@ -37,86 +34,25 @@ enum cam_tfe_csid_irq_reg {
 	TFE_CSID_IRQ_REG_TOP,
 	TFE_CSID_IRQ_REG_RX,
 	TFE_CSID_IRQ_REG_IPP,
-	TFE_CSID_IRQ_REG_PPP,
 	TFE_CSID_IRQ_REG_MAX,
 };
 
-struct cam_isp_tfe_out_port_generic_info {
-	uint32_t                res_id;
-	uint32_t                format;
-	uint32_t                width;
-	uint32_t                height;
-	uint32_t                stride;
-	uint32_t                comp_grp_id;
-	uint32_t                secure_mode;
-	uint32_t                wm_mode;
-	uint32_t                reserved;
-};
-
-struct cam_isp_tfe_in_port_generic_info {
-	uint32_t                        major_ver;
-	uint32_t                        minor_ver;
-	uint32_t                        res_id;
-	uint32_t                        lane_type;
-	uint32_t                        lane_num;
-	uint32_t                        lane_cfg;
-	uint32_t                        vc[CAM_ISP_TFE_VC_DT_CFG];
-	uint32_t                        dt[CAM_ISP_TFE_VC_DT_CFG];
-	uint32_t                        num_valid_vc_dt;
-	uint32_t                        format;
-	uint32_t                        pix_pattern;
-	uint32_t                        usage_type;
-	uint32_t                        left_start;
-	uint32_t                        left_end;
-	uint32_t                        left_width;
-	uint32_t                        right_start;
-	uint32_t                        right_end;
-	uint32_t                        right_width;
-	uint32_t                        line_start;
-	uint32_t                        line_end;
-	uint32_t                        height;
-	uint32_t                        batch_size;
-	uint32_t                        dsp_mode;
-	uint32_t                        sensor_width;
-	uint32_t                        sensor_height;
-	uint32_t                        sensor_hbi;
-	uint32_t                        sensor_vbi;
-	uint32_t                        sensor_fps;
-	uint32_t                        init_frame_drop;
-	uint32_t                        num_out_res;
-	uint32_t                        bayer_bin;
-	uint32_t                        qcfa_bin;
-	uint32_t                        core_cfg;
-	uint32_t                        num_bytes_out;
-	uint32_t                        ipp_count;
-	uint32_t                        rdi_count;
-	uint32_t                        secure_mode;
-	bool                            shdr_en;
-	bool                            is_shdr_master;
-	bool                            epd_supported;
-	struct cam_isp_tfe_out_port_generic_info    *data;
-};
 
 /**
  * struct cam_tfe_csid_hw_caps- get the CSID hw capability
  * @num_rdis:       number of rdis supported by CSID HW device
  * @num_pix:        number of pxl paths supported by CSID HW device
- * @num_ppp:        number of ppp paths supported by CSID HW device
  * @major_version : major version
  * @minor_version:  minor version
  * @version_incr:   version increment
- * @is_lite:        Indicate if it is CSID Lite
  *
  */
 struct cam_tfe_csid_hw_caps {
 	uint32_t      num_rdis;
 	uint32_t      num_pix;
-	uint32_t      num_ppp;
 	uint32_t      major_version;
 	uint32_t      minor_version;
 	uint32_t      version_incr;
-	bool          sync_clk;
-	bool          is_lite;
 };
 
 /**
@@ -134,21 +70,19 @@ struct cam_tfe_csid_hw_caps {
  * @event_cb_prv: Context data
  * @event_cb:     Callback function to hw mgr in case of hw events
  * @node_res :    Reserved resource structure pointer
- * @crop_enable : Flag to indicate CSID crop enable
  *
  */
 struct cam_tfe_csid_hw_reserve_resource_args {
 	enum cam_isp_resource_type                res_type;
 	uint32_t                                  res_id;
-	struct cam_isp_tfe_in_port_generic_info  *in_port;
-	struct cam_isp_tfe_out_port_generic_info *out_port;
+	struct cam_isp_tfe_in_port_info          *in_port;
+	struct cam_isp_tfe_out_port_info         *out_port;
 	enum cam_isp_hw_sync_mode                 sync_mode;
 	uint32_t                                  master_idx;
 	uint32_t                                  phy_sel;
 	void                                     *event_cb_prv;
 	cam_hw_mgr_event_cb_func                  event_cb;
 	struct cam_isp_resource_node             *node_res;
-	bool                                      crop_enable;
 };
 
 /**
@@ -159,33 +93,6 @@ enum cam_tfe_csid_halt_cmd {
 	CAM_TFE_CSID_RESUME_AT_FRAME_BOUNDARY,
 	CAM_TFE_CSID_HALT_IMMEDIATELY,
 	CAM_TFE_CSID_HALT_MAX,
-};
-
-/**
- * enum cam_tfe_csid_halt_mode - Specify the halt command type
- */
-enum cam_tfe_csid_halt_mode {
-	CAM_TFE_CSID_HALT_MODE_INTERNAL,
-	CAM_TFE_CSID_HALT_MODE_GLOBAL,
-	CAM_TFE_CSID_HALT_MODE_MASTER,
-	CAM_TFE_CSID_HALT_MODE_SLAVE,
-	CAM_TFE_CSID_HALT_MODE_MAX,
-};
-
-/**
- * struct cam_tfe_csid_hw_halt_args
- * @halt_mode : Applicable only for PATH resources
- *              0 Internal : The CSID responds to the HALT_CMD
- *              1 Global   : The CSID responds to the GLOBAL_HALT_CMD
- *              2 Master   : The CSID responds to the HALT_CMD
- *              3 Slave    : The CSID responds to the external halt command
- *                           and not the HALT_CMD register
- * @node_res : reource pointer array( ie cid or CSID)
- *
- */
-struct cam_tfe_csid_hw_halt_args {
-	enum cam_tfe_csid_halt_mode     halt_mode;
-	struct cam_isp_resource_node   *node_res;
 };
 
 /**
@@ -228,17 +135,13 @@ struct cam_tfe_csid_reset_cfg_args {
 /**
  * struct cam_csid_get_time_stamp_args-  time stamp capture arguments
  * @res_node :       Resource to get the time stamp
- * @time_stamp_val      : Captured time stamp
- * @boot_timestamp      : Boot time stamp
- * @prev_time_stamp_val : previous captured time stamp
- * @get_prev_timestamp  : flag to fetch previous captured time stamp from hardware
+ * @time_stamp_val : Captured time stamp
+ * @boot_timestamp : Boot time stamp
  */
 struct cam_tfe_csid_get_time_stamp_args {
 	struct cam_isp_resource_node      *node_res;
 	uint64_t                           time_stamp_val;
 	uint64_t                           boot_timestamp;
-	uint64_t                           prev_time_stamp_val;
-	bool                               get_prev_timestamp;
 };
 
 /**
@@ -249,7 +152,6 @@ enum cam_tfe_csid_cmd_type {
 	CAM_TFE_CSID_SET_CSID_DEBUG,
 	CAM_TFE_CSID_SOF_IRQ_DEBUG,
 	CAM_TFE_CSID_CMD_GET_REG_DUMP,
-	CAM_TFE_CSID_LOG_ACQUIRE_DATA,
 	CAM_TFE_CSID_CMD_MAX,
 };
 
@@ -273,15 +175,5 @@ struct cam_tfe_csid_clock_update_args {
 	uint64_t                           clk_rate;
 };
 
-/*
- * struct cam_tfe_csid_discard_init_frame_args:
- *
- * @num_frames: Num frames to discard
- * @res: Node res for this path
- */
-struct cam_tfe_csid_discard_init_frame_args {
-	uint32_t                          num_frames;
-	struct cam_isp_resource_node     *res;
-};
 
 #endif /* _CAM_TFE_CSID_HW_INTF_H_ */

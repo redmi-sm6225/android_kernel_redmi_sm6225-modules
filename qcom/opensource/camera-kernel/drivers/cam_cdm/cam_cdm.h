@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CDM_H_
@@ -26,7 +25,6 @@
 #define CAM_SW_CDM_INDEX                  0
 #define CAM_CDM_INFLIGHT_WORKS            5
 #define CAM_CDM_HW_RESET_TIMEOUT          300
-#define CAM_CDM_PAUSE_CORE_US_TIMEOUT     10000
 
 /*
  * Macros to get prepare and get information
@@ -57,7 +55,6 @@
 
 /* Number of FIFO supported on CDM */
 #define CAM_CDM_NUM_BL_FIFO 0x4
-#define CAM_CDM_NUM_TEST_BUS 16
 
 /* Max number of register set for different CDM */
 #define CAM_CDM_BL_FIFO_REG_NUM 0x4
@@ -87,40 +84,6 @@
 #define CAM_CDM_ERROR_HW_STATUS 0x5
 #define CAM_CDM_FLUSH_HW_STATUS 0x6
 #define CAM_CDM_RESET_ERR_STATUS 0x7
-#define CAM_CDM_PF_HW_STATUS 0x8
-
-/* Curent used AHB masks and shifts */
-#define CAM_CDM_AHB_LOG_CID_SHIFT    28
-#define CAM_CDM_AHB_LOG_CID_MASK     0X30000000
-#define CAM_CDM_AHB_ADDR_MASK        0x00FFFFFF
-
-/* Invalid command status register's masks and shifts */
-#define CAM_CDM_ICL_STATUS_LAST_CID_SHIFT    4
-#define CAM_CDM_ICL_STATUS_LAST_CID_MASK     0X30
-#define CAM_CDM_ICL_STATUS_INV_CID_MASK      0x03
-
-/* Core_cfg register's masks and shifts */
-#define CAM_CDM_CORE_CFG_PRIORITY_MASK             0XF00000
-#define CAM_CDM_CORE_CFG_PRIORITY_SHIFT            20
-#define CAM_CDM_CORE_CFG_IMPLICIT_WAIT_EN_MASK     0x20000
-#define CAM_CDM_CORE_CFG_ARB_SEL_RR_MASK           0x10000
-#define CAM_CDM_CORE_CFG_AHB_STOP_ON_ERR_MASK      0x100
-#define CAM_CDM_CORE_CFG_AHB_BURST_EN_MASK         0x10
-#define CAM_CDM_CORE_CFG_AHB_BURST_LEN_MASK        0x0F
-
-/* Core enable register masks and shifts */
-#define CAM_CDM_CORE_EN_MASK     0x1
-#define CAM_CDM_CORE_PAUSE_MASK  0X2
-
-/* Core Debug register masks and shifts */
-#define CAM_CDM_CORE_DBG_TEST_BUS_EN_MASK          0X01
-#define CAM_CDM_CORE_DBG_TEST_BUS_SEL_MASK         0XF0
-#define CAM_CDM_CORE_DBG_TEST_BUS_SEL_SHIFT        4
-#define CAM_CDM_CORE_DBG_LOG_AHB_MASK              0X100
-#define CAM_CDM_CORE_DBG_LOG_SHIFT                 8
-#define CAM_CDM_CORE_DBG_FIFO_RB_EN_MASK           0x10000
-#define CAM_CDM_CORE_DBG_FIFO_RB_EN_SHIFT          16
-
 
 /* Curent BL command masks and shifts */
 #define CAM_CDM_CURRENT_BL_LEN   0xFFFFF
@@ -314,9 +277,6 @@ struct cam_cdm_common_reg_data {
  *                       wait, etc.
  * @core_en:             offset to pause/enable CDM
  * @fe_cfg:              offset to configure CDM fetch engine
- * @cdm_status:          offset to read CDM status register, this register
- *                       indicates if CDM is idle, and if a pause operation
- *                       is successfully completed or not
  * @irq_context_status   offset to read back irq context status
  * @bl_fifo_rb:          offset to set BL_FIFO read back
  * @bl_fifo_base_rb:     offset to read back base address on offset set by
@@ -351,7 +311,6 @@ struct cam_cdm_common_reg_data {
  * @icl_reg:             registers to read information related to good
  *                       and invalid commands in FIFO
  * @spare:               spare register
- * @priority_group_bit_offset offset of priority group bits
  *
  */
 struct cam_cdm_common_regs {
@@ -362,7 +321,6 @@ struct cam_cdm_common_regs {
 	uint32_t core_cfg;
 	uint32_t core_en;
 	uint32_t fe_cfg;
-	uint32_t cdm_status;
 	uint32_t irq_context_status;
 	uint32_t bl_fifo_rb;
 	uint32_t bl_fifo_base_rb;
@@ -392,7 +350,6 @@ struct cam_cdm_common_regs {
 	const struct cam_cdm_perf_regs *perf_reg;
 	const struct cam_cdm_icl_regs *icl_reg;
 	uint32_t spare;
-	uint32_t priority_group_bit_offset;
 };
 
 /**
@@ -463,7 +420,6 @@ enum cam_cdm_hw_version {
 	CAM_CDM_VERSION_1_2 = 0x10020000,
 	CAM_CDM_VERSION_2_0 = 0x20000000,
 	CAM_CDM_VERSION_2_1 = 0x20010000,
-	CAM_CDM_VERSION_2_2 = 0x20020000,
 	CAM_CDM_VERSION_MAX,
 };
 
@@ -503,6 +459,14 @@ struct cam_cdm_hw_intf_cmd_submit_bl {
 	struct cam_cdm_bl_request *data;
 };
 
+/* struct cam_cdm_hw_mem - CDM hw memory struct */
+struct cam_cdm_hw_mem {
+	int32_t handle;
+	uint32_t vaddr;
+	uintptr_t kmdvaddr;
+	size_t size;
+};
+
 /* struct cam_cdm_bl_fifo - CDM hw memory struct */
 struct cam_cdm_bl_fifo {
 	struct completion bl_complete;
@@ -540,7 +504,7 @@ struct cam_cdm_bl_fifo {
  * @gen_irq:             memory region in which gen_irq command will be written
  * @cpas_handle:         handle for cpas driver
  * @arbitration:         type of arbitration to be used for the CDM
- * @num_active_clients:  Number of currently active clients
+ * @rst_done_cnt:        CMD reset done count
  */
 struct cam_cdm {
 	uint32_t index;
@@ -560,22 +524,19 @@ struct cam_cdm {
 	struct cam_cdm_bl_fifo bl_fifo[CAM_CDM_BL_FIFO_MAX];
 	unsigned long cdm_status;
 	uint8_t bl_tag;
+	struct cam_cdm_hw_mem gen_irq[CAM_CDM_BL_FIFO_MAX];
 	uint32_t cpas_handle;
 	enum cam_cdm_arbitration arbitration;
-	uint8_t num_active_clients;
+	uint32_t rst_done_cnt;
 };
 
 /* struct cam_cdm_private_dt_data - CDM hw custom dt data */
 struct cam_cdm_private_dt_data {
 	bool dt_cdm_shared;
-	bool config_fifo;
-	bool is_single_ctx_cdm;
-	uint8_t priority_group;
-	uint32_t fifo_depth[CAM_CDM_BL_FIFO_MAX];
 	uint32_t dt_num_supported_clients;
-	uint32_t pid;
-	uint32_t mid;
 	const char *dt_cdm_client_name[CAM_PER_CDM_MAX_REGISTERED_CLIENTS];
+	bool config_fifo;
+	uint32_t fifo_depth[CAM_CDM_BL_FIFO_MAX];
 };
 
 /* struct cam_cdm_intf_devices - CDM mgr interface devices */
@@ -589,11 +550,10 @@ struct cam_cdm_intf_devices {
 /* struct cam_cdm_intf_mgr - CDM mgr interface device struct */
 struct cam_cdm_intf_mgr {
 	bool probe_done;
+	struct cam_cdm_intf_devices nodes[CAM_CDM_INTF_MGR_MAX_SUPPORTED_CDM];
 	uint32_t cdm_count;
 	uint32_t dt_supported_hw_cdm;
 	int32_t refcount;
-	struct cam_cdm_intf_devices nodes[CAM_CDM_INTF_MGR_MAX_SUPPORTED_CDM];
-	struct dentry *dentry;
 };
 
 int cam_cdm_intf_register_hw_cdm(struct cam_hw_intf *hw,

@@ -20,16 +20,15 @@
 #include "cam_debug_util.h"
 #include "ope_hw_100.h"
 #include "ope_dev_intf.h"
-#include "camera_main.h"
 
-static struct cam_ope_hw_intf_data cam_ope_dev_list[OPE_DEV_MAX];
 static struct cam_ope_device_hw_info ope_hw_info;
-struct cam_ope_soc_private ope_soc_info;
-EXPORT_SYMBOL(ope_soc_info);
+static struct ope_dev_soc ope_soc_info;
 
 static struct hw_version_reg ope_hw_version_reg = {
 	.hw_ver = 0x0,
 };
+
+static char ope_dev_name[8];
 
 static int cam_ope_init_hw_version(struct cam_hw_soc_info *soc_info,
 	struct cam_ope_device_core_info *core_info)
@@ -108,21 +107,16 @@ int cam_ope_register_cpas(struct cam_hw_soc_info *soc_info,
 	return rc;
 }
 
-static int cam_ope_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+int cam_ope_probe(struct platform_device *pdev)
 {
 	struct cam_hw_intf                *ope_dev_intf = NULL;
 	struct cam_hw_info                *ope_dev = NULL;
 	const struct of_device_id         *match_dev = NULL;
 	struct cam_ope_device_core_info   *core_info = NULL;
-	struct cam_ope_dev_probe           ope_probe;
-	struct cam_ope_cpas_vote           cpas_vote;
-	struct cam_ope_soc_private        *soc_private;
-	int i;
+	int                                rc = 0;
 	uint32_t hw_idx;
-	int rc = 0;
-
-	struct platform_device *pdev = to_platform_device(dev);
+	struct cam_ope_dev_probe ope_probe;
+	struct cam_ope_cpas_vote cpas_vote;
 
 	of_property_read_u32(pdev->dev.of_node,
 		"cell-index", &hw_idx);
@@ -139,9 +133,13 @@ static int cam_ope_component_bind(struct device *dev,
 		goto ope_dev_alloc_failed;
 	}
 
+	memset(ope_dev_name, 0, sizeof(ope_dev_name));
+	snprintf(ope_dev_name, sizeof(ope_dev_name),
+		"ope%1u", ope_dev_intf->hw_idx);
+
 	ope_dev->soc_info.pdev = pdev;
 	ope_dev->soc_info.dev = &pdev->dev;
-	ope_dev->soc_info.dev_name = pdev->name;
+	ope_dev->soc_info.dev_name = ope_dev_name;
 	ope_dev_intf->hw_priv = ope_dev;
 	ope_dev_intf->hw_ops.init = cam_ope_init_hw;
 	ope_dev_intf->hw_ops.deinit = cam_ope_deinit_hw;
@@ -155,12 +153,7 @@ static int cam_ope_component_bind(struct device *dev,
 		ope_dev_intf->hw_type,
 		ope_dev_intf->hw_idx);
 
-	if (ope_dev_intf->hw_idx < OPE_DEV_MAX)
-		cam_ope_dev_list[ope_dev_intf->hw_idx].hw_intf =
-			ope_dev_intf;
-
 	platform_set_drvdata(pdev, ope_dev_intf);
-
 
 	ope_dev->core_info = kzalloc(sizeof(struct cam_ope_device_core_info),
 		GFP_KERNEL);
@@ -218,6 +211,10 @@ static int cam_ope_component_bind(struct device *dev,
 
 	rc = cam_cpas_start(core_info->cpas_handle,
 		&cpas_vote.ahb_vote, &cpas_vote.axi_vote);
+	if (rc) {
+		CAM_ERR(CAM_OPE, "cam_cpas_start failed, rc=%d", rc);
+		goto init_hw_failure;
+	}
 
 	rc = cam_ope_init_hw_version(&ope_dev->soc_info, ope_dev->core_info);
 	if (rc)
@@ -234,16 +231,8 @@ static int cam_ope_component_bind(struct device *dev,
 	spin_lock_init(&ope_dev->hw_lock);
 	init_completion(&ope_dev->hw_complete);
 
-	CAM_DBG(CAM_OPE, "OPE:%d component bound successfully",
+	CAM_DBG(CAM_OPE, "OPE%d probe successful",
 		ope_dev_intf->hw_idx);
-	soc_private = ope_dev->soc_info.soc_private;
-	cam_ope_dev_list[ope_dev_intf->hw_idx].num_hw_pid =
-		soc_private->num_pid;
-
-	for (i = 0; i < soc_private->num_pid; i++)
-		cam_ope_dev_list[ope_dev_intf->hw_idx].hw_pid[i] =
-			soc_private->pid[i];
-
 	return rc;
 
 init_hw_failure:
@@ -259,47 +248,6 @@ ope_dev_alloc_failed:
 	return rc;
 }
 
-static void cam_ope_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-
-	CAM_DBG(CAM_OPE, "Unbinding component: %s", pdev->name);
-}
-
-int cam_ope_hw_init(struct cam_ope_hw_intf_data **ope_hw_intf_data,
-		uint32_t hw_idx)
-{
-	int rc = 0;
-
-	if (cam_ope_dev_list[hw_idx].hw_intf) {
-		*ope_hw_intf_data = &cam_ope_dev_list[hw_idx];
-		rc = 0;
-	} else {
-		CAM_ERR(CAM_OPE, "inval param");
-		*ope_hw_intf_data = NULL;
-		rc = -ENODEV;
-	}
-	return rc;
-}
-
-const static struct component_ops cam_ope_component_ops = {
-	.bind = cam_ope_component_bind,
-	.unbind = cam_ope_component_unbind,
-};
-
-int cam_ope_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_OPE, "Adding OPE component");
-	rc = component_add(&pdev->dev, &cam_ope_component_ops);
-	if (rc)
-		CAM_ERR(CAM_OPE, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
 static const struct of_device_id cam_ope_dt_match[] = {
 	{
 		.compatible = "qcom,ope",
@@ -309,7 +257,7 @@ static const struct of_device_id cam_ope_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, cam_ope_dt_match);
 
-struct platform_driver cam_ope_driver = {
+static struct platform_driver cam_ope_driver = {
 	.probe = cam_ope_probe,
 	.driver = {
 		.name = "ope",

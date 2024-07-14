@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_SOC_H_
@@ -22,24 +22,17 @@
  *                           This handle is used for all further interface
  *                           with CPAS.
  * @cpas_version:            Has cpas version read from Hardware
- * @rt_wrapper_base:         Base address of the RT-Wrapper if the hw is in rt-wrapper
- * @dsp_clk_index:           DSP clk index in optional clocks
  * @ubwc_static_ctrl:        UBWC static control configuration
  * @is_ife_lite:             Flag to indicate full vs lite IFE
- * @ife_clk_src:             IFE source clock
- * @num_pid:                 Number of pids of ife
- * @pid:                     IFE pid values list
  */
 struct cam_vfe_soc_private {
 	uint32_t    cpas_handle;
 	uint32_t    cpas_version;
-	uint32_t    rt_wrapper_base;
+	struct clk *dsp_clk;
 	int32_t     dsp_clk_index;
+	int32_t     dsp_clk_rate;
 	uint32_t    ubwc_static_ctrl[UBWC_STATIC_CONFIG_MAX];
 	bool        is_ife_lite;
-	uint64_t    ife_clk_src;
-	uint32_t    num_pid;
-	uint32_t    pid[CAM_ISP_HW_MAX_PID_VAL];
 };
 
 /*

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/device.h>
@@ -15,7 +14,6 @@
 #include "cam_lrme_context.h"
 #include "cam_lrme_hw_mgr.h"
 #include "cam_lrme_hw_mgr_intf.h"
-#include "camera_main.h"
 
 #define CAM_LRME_DEV_NAME "cam-lrme"
 
@@ -78,7 +76,7 @@ static int cam_lrme_dev_open(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int cam_lrme_dev_close_internal(struct v4l2_subdev *sd,
+static int cam_lrme_dev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	int rc = 0;
@@ -112,31 +110,17 @@ end:
 	return rc;
 }
 
-static int cam_lrme_dev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_LRME, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-	return cam_lrme_dev_close_internal(sd, fh);
-}
-
 static const struct v4l2_subdev_internal_ops cam_lrme_subdev_internal_ops = {
 	.open = cam_lrme_dev_open,
 	.close = cam_lrme_dev_close,
 };
 
-static int cam_lrme_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_lrme_dev_probe(struct platform_device *pdev)
 {
 	int rc;
 	int i;
 	struct cam_hw_mgr_intf hw_mgr_intf;
 	struct cam_node *node;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	g_lrme_dev = kzalloc(sizeof(struct cam_lrme_dev), GFP_KERNEL);
 	if (!g_lrme_dev) {
@@ -144,7 +128,6 @@ static int cam_lrme_component_bind(struct device *dev,
 		return -ENOMEM;
 	}
 	g_lrme_dev->sd.internal_ops = &cam_lrme_subdev_internal_ops;
-	g_lrme_dev->sd.close_seq_prior = CAM_SD_CLOSE_MEDIUM_PRIORITY;
 
 	mutex_init(&g_lrme_dev->lock);
 
@@ -165,7 +148,7 @@ static int cam_lrme_component_bind(struct device *dev,
 	for (i = 0; i < CAM_CTX_MAX; i++) {
 		rc = cam_lrme_context_init(&g_lrme_dev->lrme_ctx[i],
 				&g_lrme_dev->ctx[i],
-				&node->hw_mgr_intf, i, -1);
+				&node->hw_mgr_intf, i);
 		if (rc) {
 			CAM_ERR(CAM_LRME, "LRME context init failed");
 			goto deinit_ctx;
@@ -179,8 +162,7 @@ static int cam_lrme_component_bind(struct device *dev,
 		goto deinit_ctx;
 	}
 
-	node->sd_handler = cam_lrme_dev_close_internal;
-	CAM_DBG(CAM_LRME, "Component bound successfully");
+	CAM_DBG(CAM_LRME, "%s probe complete", g_lrme_dev->sd.name);
 
 	return 0;
 
@@ -198,8 +180,7 @@ free_mem:
 	return rc;
 }
 
-static void cam_lrme_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_lrme_dev_remove(struct platform_device *pdev)
 {
 	int i;
 	int rc = 0;
@@ -216,34 +197,13 @@ static void cam_lrme_component_unbind(struct device *dev,
 
 	rc = cam_subdev_remove(&g_lrme_dev->sd);
 	if (rc)
-		CAM_ERR(CAM_LRME, "Unregister failed rc: %d", rc);
+		CAM_ERR(CAM_LRME, "Unregister failed");
 
 	mutex_destroy(&g_lrme_dev->lock);
 	kfree(g_lrme_dev);
 	g_lrme_dev = NULL;
-}
-
-const static struct component_ops cam_lrme_component_ops = {
-	.bind = cam_lrme_component_bind,
-	.unbind = cam_lrme_component_unbind,
-};
-
-static int cam_lrme_dev_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_LRME, "Adding LRME component");
-	rc = component_add(&pdev->dev, &cam_lrme_component_ops);
-	if (rc)
-		CAM_ERR(CAM_LRME, "failed to add component rc: %d", rc);
 
 	return rc;
-}
-
-static int cam_lrme_dev_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_lrme_component_ops);
-	return 0;
 }
 
 static const struct of_device_id cam_lrme_dt_match[] = {
@@ -253,7 +213,7 @@ static const struct of_device_id cam_lrme_dt_match[] = {
 	{}
 };
 
-struct platform_driver cam_lrme_driver = {
+static struct platform_driver cam_lrme_driver = {
 	.probe = cam_lrme_dev_probe,
 	.remove = cam_lrme_dev_remove,
 	.driver = {

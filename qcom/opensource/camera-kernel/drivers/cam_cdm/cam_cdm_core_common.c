@@ -19,38 +19,6 @@
 #include "cam_cdm_soc.h"
 #include "cam_cdm_core_common.h"
 
-int cam_cdm_util_cpas_start(struct cam_hw_info *cdm_hw)
-{
-	struct cam_cdm *core = NULL;
-	struct cam_ahb_vote ahb_vote;
-	struct cam_axi_vote axi_vote = {0};
-	int rc = 0;
-
-	if (!cdm_hw) {
-		CAM_ERR(CAM_CDM, "Invalid cdm hw");
-		return -EINVAL;
-	}
-
-	core = (struct cam_cdm *)cdm_hw->core_info;
-
-	ahb_vote.type = CAM_VOTE_ABSOLUTE;
-	ahb_vote.vote.level = CAM_LOWSVS_VOTE;
-	axi_vote.num_paths = 1;
-	axi_vote.axi_path[0].path_data_type = CAM_AXI_PATH_DATA_ALL;
-	axi_vote.axi_path[0].transac_type = CAM_AXI_TRANSACTION_READ;
-	axi_vote.axi_path[0].camnoc_bw = CAM_CPAS_DEFAULT_AXI_BW;
-	axi_vote.axi_path[0].mnoc_ab_bw = CAM_CPAS_DEFAULT_AXI_BW;
-	axi_vote.axi_path[0].mnoc_ib_bw = CAM_CPAS_DEFAULT_AXI_BW;
-
-	rc = cam_cpas_start(core->cpas_handle, &ahb_vote, &axi_vote);
-	if (rc) {
-		CAM_ERR(CAM_CDM, "CDM[%d] CPAS start failed rc=%d", core->index, rc);
-		return rc;
-	}
-
-	return rc;
-}
-
 static void cam_cdm_get_client_refcount(struct cam_cdm_client *client)
 {
 	mutex_lock(&client->lock);
@@ -83,7 +51,6 @@ bool cam_cdm_set_cam_hw_version(
 	case CAM_CDM120_VERSION:
 	case CAM_CDM200_VERSION:
 	case CAM_CDM210_VERSION:
-	case CAM_CDM220_VERSION:
 		cam_version->major    = (ver & 0xF0000000);
 		cam_version->minor    = (ver & 0xFFF0000);
 		cam_version->incr     = (ver & 0xFFFF);
@@ -117,7 +84,6 @@ struct cam_cdm_utils_ops *cam_cdm_get_ops(
 		case CAM_CDM120_VERSION:
 		case CAM_CDM200_VERSION:
 		case CAM_CDM210_VERSION:
-		case CAM_CDM220_VERSION:
 			return &CDM170_ops;
 		default:
 			CAM_ERR(CAM_CDM, "CDM Version=%x not supported in util",
@@ -195,17 +161,6 @@ int cam_cdm_find_free_client_slot(struct cam_cdm *hw)
 	return -EBUSY;
 }
 
-static int cam_cdm_get_last_client_idx(struct cam_cdm *core)
-{
-	int i, last_client = 0;
-
-	for (i = 0; i < CAM_PER_CDM_MAX_REGISTERED_CLIENTS; i++) {
-		if (core->clients[i])
-			last_client = i;
-	}
-
-	return last_client;
-}
 
 void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 	enum cam_cdm_cb_status status, void *data)
@@ -213,9 +168,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 	int i;
 	struct cam_cdm *core = NULL;
 	struct cam_cdm_client *client = NULL;
-	struct cam_cdm_bl_cb_request_entry *node = NULL;
-	struct cam_hw_dump_pf_args pf_args = {0};
-	int client_idx, last_client;
 
 	if (!cdm_hw) {
 		CAM_ERR(CAM_CDM, "CDM Notify called with NULL hw info");
@@ -223,9 +175,10 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 	}
 	core = (struct cam_cdm *)cdm_hw->core_info;
 
-	switch (status) {
-	case CAM_CDM_CB_STATUS_BL_SUCCESS:
-		node = (struct cam_cdm_bl_cb_request_entry *)data;
+	if (status == CAM_CDM_CB_STATUS_BL_SUCCESS) {
+		int client_idx;
+		struct cam_cdm_bl_cb_request_entry *node =
+			(struct cam_cdm_bl_cb_request_entry *)data;
 
 		client_idx = CAM_CDM_GET_CLIENT_IDX(node->client_hdl);
 		client = core->clients[client_idx];
@@ -241,7 +194,7 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 				client->data.identifier, node->cookie);
 			client->data.cam_cdm_callback(node->client_hdl,
 				node->userdata, CAM_CDM_CB_STATUS_BL_SUCCESS,
-				(void *)(&node->cookie));
+				node->cookie);
 			CAM_DBG(CAM_CDM, "Exit client cb cookie=%d",
 				node->cookie);
 		} else {
@@ -250,13 +203,15 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 		}
 		mutex_unlock(&client->lock);
 		cam_cdm_put_client_refcount(client);
-		break;
-	case CAM_CDM_CB_STATUS_HW_RESET_DONE:
-	case CAM_CDM_CB_STATUS_HW_FLUSH:
-	case CAM_CDM_CB_STATUS_HW_RESUBMIT:
-	case CAM_CDM_CB_STATUS_INVALID_BL_CMD:
-	case CAM_CDM_CB_STATUS_HW_ERROR:
-		node = (struct cam_cdm_bl_cb_request_entry *)data;
+		return;
+	} else if (status == CAM_CDM_CB_STATUS_HW_RESET_DONE ||
+			status == CAM_CDM_CB_STATUS_HW_FLUSH ||
+			status == CAM_CDM_CB_STATUS_HW_RESUBMIT ||
+			status == CAM_CDM_CB_STATUS_INVALID_BL_CMD ||
+			status == CAM_CDM_CB_STATUS_HW_ERROR) {
+		int client_idx;
+		struct cam_cdm_bl_cb_request_entry *node =
+			(struct cam_cdm_bl_cb_request_entry *)data;
 
 		client_idx = CAM_CDM_GET_CLIENT_IDX(node->client_hdl);
 		client = core->clients[client_idx];
@@ -272,7 +227,7 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 				client->handle,
 				client->data.userdata,
 				status,
-				(void *)(&node->cookie));
+				node->cookie);
 		} else {
 			CAM_ERR(CAM_CDM,
 				"No cb registered for client: name %s, hdl=%x",
@@ -280,56 +235,34 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 		}
 		mutex_unlock(&client->lock);
 		cam_cdm_put_client_refcount(client);
-		break;
-	case CAM_CDM_CB_STATUS_PAGEFAULT:
-		last_client = cam_cdm_get_last_client_idx(core);
-		pf_args.pf_smmu_info = (struct cam_smmu_pf_info *)data;
-		pf_args.handle_sec_pf = true;
-		for (i = 0; i < CAM_PER_CDM_MAX_REGISTERED_CLIENTS; i++) {
+		return;
+	}
+
+	for (i = 0; i < CAM_PER_CDM_MAX_REGISTERED_CLIENTS; i++) {
+		if (core->clients[i] != NULL) {
 			client = core->clients[i];
-			if (!client)
-				continue;
 			cam_cdm_get_client_refcount(client);
+			mutex_lock(&client->lock);
+			CAM_DBG(CAM_CDM, "Found client slot %d", i);
 			if (client->data.cam_cdm_callback) {
-				if (i == last_client)
-					/*
-					 * If the fault causing client is not found,
-					 * make the last client of this CDM sends PF
-					 * notification to userspace. This avoids multiple
-					 * PF notifications and ensures at least one
-					 * notification is sent.
-					 */
-					pf_args.pf_context_info.force_send_pf_evt = true;
-				mutex_lock(&client->lock);
-				CAM_DBG(CAM_CDM, "Found client slot %d name %s",
-					i, client->data.identifier);
-				client->data.cam_cdm_callback(
-					client->handle,
-					client->data.userdata,
-					status,
-					&pf_args);
-				if (pf_args.pf_context_info.ctx_found ||
-					pf_args.pf_context_info.force_send_pf_evt) {
-					if (pf_args.pf_context_info.ctx_found)
-						CAM_ERR(CAM_CDM,
-							"Page Fault found on client: [%s][%u]",
-							client->data.identifier,
-							client->data.cell_index);
-					mutex_unlock(&client->lock);
-					cam_cdm_put_client_refcount(client);
-					break;
+				if (status == CAM_CDM_CB_STATUS_PAGEFAULT) {
+					unsigned long iova =
+						(unsigned long)data;
+
+					client->data.cam_cdm_callback(
+						client->handle,
+						client->data.userdata,
+						CAM_CDM_CB_STATUS_PAGEFAULT,
+						(iova & 0xFFFFFFFF));
 				}
-				mutex_unlock(&client->lock);
 			} else {
-				CAM_ERR(CAM_CDM, "No cb registered for client hdl=%x",
+				CAM_ERR(CAM_CDM,
+					"No cb registered for client hdl=%x",
 					client->handle);
 			}
+			mutex_unlock(&client->lock);
 			cam_cdm_put_client_refcount(client);
 		}
-
-		break;
-	default:
-		CAM_ERR(CAM_CDM, "Invalid cdm cb status: %u", status);
 	}
 }
 
@@ -347,10 +280,28 @@ static int cam_cdm_stream_handle_init(void *hw_priv, bool init)
 			CAM_ERR(CAM_CDM, "CDM HW init failed");
 			return rc;
 		}
+
+		if (core->arbitration !=
+			CAM_CDM_ARBITRATION_PRIORITY_BASED) {
+			rc = cam_hw_cdm_alloc_genirq_mem(
+				hw_priv);
+			if (rc) {
+				CAM_ERR(CAM_CDM,
+					"Genirqalloc failed");
+				cam_hw_cdm_deinit(hw_priv,
+					NULL, 0);
+			}
+		}
 	} else {
 		rc = cam_hw_cdm_deinit(hw_priv, NULL, 0);
 		if (rc)
 			CAM_ERR(CAM_CDM, "Deinit failed in streamoff");
+
+		if (core->arbitration !=
+			CAM_CDM_ARBITRATION_PRIORITY_BASED) {
+			if (cam_hw_cdm_release_genirq_mem(hw_priv))
+				CAM_ERR(CAM_CDM, "Genirq release fail");
+		}
 	}
 
 	return rc;
@@ -370,20 +321,6 @@ int cam_cdm_stream_ops_internal(void *hw_priv,
 		return -EINVAL;
 
 	core = (struct cam_cdm *)cdm_hw->core_info;
-
-	/*
-	 * If this CDM HW encounters Page Fault, block any futher
-	 * stream on/off until this CDM get released and acquired
-	 * again. CDM page fault handler will stream off the device.
-	 */
-	if (test_bit(CAM_CDM_PF_HW_STATUS, &core->cdm_status)) {
-		CAM_WARN(CAM_CDM,
-			"Attempt to stream %s failed. %s%u has encountered a page fault",
-			operation ? "on" : "off",
-			core->name, core->id);
-		return -EAGAIN;
-	}
-
 	mutex_lock(&cdm_hw->hw_mutex);
 	client_idx = CAM_CDM_GET_CLIENT_IDX(*handle);
 	client = core->clients[client_idx];
@@ -414,7 +351,25 @@ int cam_cdm_stream_ops_internal(void *hw_priv,
 
 	if (operation == true) {
 		if (!cdm_hw->open_count) {
-			rc = cam_cdm_util_cpas_start(cdm_hw);
+			struct cam_ahb_vote ahb_vote;
+			struct cam_axi_vote axi_vote = {0};
+
+			ahb_vote.type = CAM_VOTE_ABSOLUTE;
+			ahb_vote.vote.level = CAM_LOWSVS_VOTE;
+			axi_vote.num_paths = 1;
+			axi_vote.axi_path[0].path_data_type =
+				CAM_AXI_PATH_DATA_ALL;
+			axi_vote.axi_path[0].transac_type =
+				CAM_AXI_TRANSACTION_READ;
+			axi_vote.axi_path[0].camnoc_bw =
+				CAM_CPAS_DEFAULT_AXI_BW;
+			axi_vote.axi_path[0].mnoc_ab_bw =
+				CAM_CPAS_DEFAULT_AXI_BW;
+			axi_vote.axi_path[0].mnoc_ib_bw =
+				CAM_CPAS_DEFAULT_AXI_BW;
+
+			rc = cam_cpas_start(core->cpas_handle,
+				&ahb_vote, &axi_vote);
 			if (rc != 0) {
 				CAM_ERR(CAM_CDM, "CPAS start failed");
 				goto end;
@@ -484,49 +439,6 @@ end:
 	return rc;
 }
 
-int cam_cdm_pf_stream_off_all_clients(struct cam_hw_info *cdm_hw)
-{
-	struct cam_cdm *core;
-	struct cam_cdm_client *client;
-	int i, rc;
-
-	if (!cdm_hw)
-		return -EINVAL;
-
-	core = cdm_hw->core_info;
-
-	if (!cdm_hw->open_count) {
-		CAM_DBG(CAM_CDM, "%s%u already streamed off. Open count %d",
-			core->name, core->id, cdm_hw->open_count);
-		return -EPERM;
-	}
-
-	CAM_DBG(CAM_CDM, "streaming off %s%u internally",
-		core->name, core->id);
-
-	rc = cam_hw_cdm_pf_deinit(cdm_hw, NULL, 0);
-	if (rc)
-		CAM_ERR(CAM_CDM, "Deinit failed in stream off rc: %d", rc);
-
-	for (i = 0; i < CAM_PER_CDM_MAX_REGISTERED_CLIENTS; i++) {
-		client = core->clients[i];
-		if (!client)
-			continue;
-
-		mutex_lock(&client->lock);
-		client->stream_on = false;
-		mutex_unlock(&client->lock);
-	}
-
-	rc = cam_cpas_stop(core->cpas_handle);
-	if (rc)
-		CAM_ERR(CAM_CDM, "CPAS stop failed in stream off rc %d", rc);
-
-	cdm_hw->open_count = 0;
-
-	return rc;
-}
-
 int cam_cdm_stream_start(void *hw_priv,
 	void *start_args, uint32_t size)
 {
@@ -567,21 +479,6 @@ int cam_cdm_process_cmd(void *hw_priv,
 
 	soc_data = &cdm_hw->soc_info;
 	core = (struct cam_cdm *)cdm_hw->core_info;
-
-	/*
-	 * When CDM has encountered a page fault, other than release no
-	 * other command will be serviced. PF handler notifies all clients
-	 * on the error, clients are expected to handle it, and release
-	 * its reference to the CDM core.
-	 */
-	if (test_bit(CAM_CDM_PF_HW_STATUS, &core->cdm_status) &&
-		(cmd != CAM_CDM_HW_INTF_CMD_RELEASE)) {
-		CAM_ERR(CAM_CDM,
-			"%s%u has encountered a page fault, unable to service cmd %u",
-			core->name, core->id, cmd);
-		return -EAGAIN;
-	}
-
 	switch (cmd) {
 	case CAM_CDM_HW_INTF_CMD_SUBMIT_BL: {
 		struct cam_cdm_hw_intf_cmd_submit_bl *req;
@@ -608,7 +505,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 			break;
 		}
 		cam_cdm_get_client_refcount(client);
-		if (req->data->flag &&
+		if ((req->data->flag == true) &&
 			(!client->data.cam_cdm_callback)) {
 			CAM_ERR(CAM_CDM,
 				"CDM request cb without registering cb");
@@ -680,9 +577,8 @@ int cam_cdm_process_cmd(void *hw_priv,
 			rc = -ENOMEM;
 			break;
 		}
-		core->num_active_clients++;
-		mutex_unlock(&cdm_hw->hw_mutex);
 
+		mutex_unlock(&cdm_hw->hw_mutex);
 		client = core->clients[idx];
 		mutex_init(&client->lock);
 		data->ops = core->ops;
@@ -698,7 +594,6 @@ int cam_cdm_process_cmd(void *hw_priv,
 				mutex_lock(&cdm_hw->hw_mutex);
 				kfree(core->clients[idx]);
 				core->clients[idx] = NULL;
-				core->num_active_clients--;
 				mutex_unlock(
 					&cdm_hw->hw_mutex);
 				rc = -EPERM;
@@ -759,17 +654,6 @@ int cam_cdm_process_cmd(void *hw_priv,
 		mutex_unlock(&client->lock);
 		mutex_destroy(&client->lock);
 		kfree(client);
-		if (core->num_active_clients)
-			core->num_active_clients--;
-		else
-			CAM_ERR(CAM_CDM,
-				"Invalid active client decrement %u for %s%u",
-				core->num_active_clients, core->name, core->id);
-		if (!core->num_active_clients) {
-			CAM_DBG(CAM_CDM, "Clear cdm status bits for %s%u",
-				core->name, core->id);
-			core->cdm_status = 0;
-		}
 		mutex_unlock(&cdm_hw->hw_mutex);
 		rc = 0;
 		break;

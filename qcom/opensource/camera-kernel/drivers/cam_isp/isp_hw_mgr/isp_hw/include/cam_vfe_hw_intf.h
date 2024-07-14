@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE_HW_INTF_H_
@@ -12,10 +11,9 @@
 #include "cam_ife_csid_hw_intf.h"
 #include "cam_cpas_api.h"
 
-#define CAM_VFE_HW_NUM_MAX            8
+#define CAM_VFE_HW_NUM_MAX            7
 
 #define VFE_CORE_BASE_IDX             0
-#define RT_BASE_IDX                   2
 /*
  * VBIF and BUS do not exist on same HW.
  * Hence both can be 1 below.
@@ -24,8 +22,6 @@
 #define VFE_BUS_BASE_IDX              1
 
 #define CAM_VFE_MAX_UBWC_PORTS        4
-
-#define CAM_VFE_PERF_CNT_MAX          2
 
 enum cam_isp_hw_vfe_in_mux {
 	CAM_ISP_HW_VFE_IN_CAMIF       = 0,
@@ -94,38 +90,16 @@ enum cam_vfe_reset_type {
 /*
  * struct cam_vfe_hw_get_hw_cap:
  *
- * @Brief:     Argument type for fetching the hw information for Query caps
- * @major:     Major revision number
- * @minor:     Minor revision number
- * @incr:      Increment revision number
- * @is_lite:   Flag to indicate Whether a full vfe or a Lite vfe
+ * @max_width:               Max width supported by HW
+ * @max_height:              Max height supported by HW
+ * @max_pixel_num:           Max Pixel channels available
+ * @max_rdi_num:             Max Raw channels available
  */
 struct cam_vfe_hw_get_hw_cap {
-	uint32_t major;
-	uint32_t minor;
-	uint32_t incr;
-	bool     is_lite;
-};
-
-/*
- * struct cam_vfe_hw_vfe_bus_rd_acquire_args:
- *
- * @rsrc_node:               Pointer to Resource Node object, filled if acquire
- *                           is successful
- * @res_id:                  Unique Identity of port to associate with this
- *                           resource.
- * @is_dual:                 Flag to indicate dual VFE usecase
- * @cdm_ops:                 CDM operations
- * @unpacket_fmt:            Unpacker format for read engine
- * @is_offline:              Flag to indicate offline usecase
- */
-struct cam_vfe_hw_vfe_bus_rd_acquire_args {
-	struct cam_isp_resource_node         *rsrc_node;
-	uint32_t                              res_id;
-	uint32_t                              is_dual;
-	struct cam_cdm_utils_ops             *cdm_ops;
-	uint32_t                              unpacker_fmt;
-	bool                                  is_offline;
+	uint32_t                max_width;
+	uint32_t                max_height;
+	uint32_t                max_pixel_num;
+	uint32_t                max_rdi_num;
 };
 
 /*
@@ -144,8 +118,6 @@ struct cam_vfe_hw_vfe_bus_rd_acquire_args {
  *                           (Default is Master in case of Single VFE)
  * @dual_slave_core:         If Master and Slave exists, HW Index of Slave
  * @cdm_ops:                 CDM operations
- * @disable_ubwc_comp:       Disable UBWC compression
- * @use_wm_pack:             Use WM Packing
  */
 struct cam_vfe_hw_vfe_out_acquire_args {
 	struct cam_isp_resource_node         *rsrc_node;
@@ -156,8 +128,6 @@ struct cam_vfe_hw_vfe_out_acquire_args {
 	uint32_t                              is_master;
 	uint32_t                              dual_slave_core;
 	struct cam_cdm_utils_ops             *cdm_ops;
-	bool                                  disable_ubwc_comp;
-	bool                                  use_wm_pack;
 };
 
 /*
@@ -167,27 +137,17 @@ struct cam_vfe_hw_vfe_out_acquire_args {
  *                           is successful
  * @res_id:                  Resource ID of resource to acquire if specific,
  *                           else CAM_ISP_HW_VFE_IN_MAX
- * @dual_hw_idx:             Slave core for this master core if dual vfe case
- * @is_dual:                 flag to indicate if dual vfe case
  * @cdm_ops:                 CDM operations
  * @sync_mode:               In case of Dual VFE, this is Master or Slave.
  *                           (Default is Master in case of Single VFE)
  * @in_port:                 Input port details to acquire
- * @is_fe_enabled:           Flag to indicate if FE is enabled
- * @is_offline:              Flag to indicate Offline IFE
- * @handle_camif_irq:        Flag to handle the cmaif irq in VFE
  */
 struct cam_vfe_hw_vfe_in_acquire_args {
 	struct cam_isp_resource_node         *rsrc_node;
 	uint32_t                              res_id;
-	uint32_t                              dual_hw_idx;
-	uint32_t                              is_dual;
 	void                                 *cdm_ops;
 	enum cam_isp_hw_sync_mode             sync_mode;
 	struct cam_isp_in_port_generic_info  *in_port;
-	bool                                  is_fe_enabled;
-	bool                                  is_offline;
-	bool                                  handle_camif_irq;
 };
 
 /*
@@ -199,7 +159,6 @@ struct cam_vfe_hw_vfe_in_acquire_args {
  *                           with this resource.
  * @priv:                    Context data
  * @event_cb:                Callback function to hw mgr in case of hw events
- * @buf_done_controller:     Buf done controller for isp
  * @vfe_out:                 Acquire args for VFE_OUT
  * @vfe_bus_rd               Acquire args for VFE_BUS_READ
  * @vfe_in:                  Acquire args for VFE_IN
@@ -209,11 +168,10 @@ struct cam_vfe_acquire_args {
 	void                                *tasklet;
 	void                                *priv;
 	cam_hw_mgr_event_cb_func             event_cb;
-	void                                *buf_done_controller;
 	union {
-		struct cam_vfe_hw_vfe_out_acquire_args     vfe_out;
-		struct cam_vfe_hw_vfe_bus_rd_acquire_args  vfe_bus_rd;
-		struct cam_vfe_hw_vfe_in_acquire_args      vfe_in;
+		struct cam_vfe_hw_vfe_out_acquire_args  vfe_out;
+		struct cam_vfe_hw_vfe_out_acquire_args  vfe_bus_rd;
+		struct cam_vfe_hw_vfe_in_acquire_args   vfe_in;
 	};
 };
 
@@ -276,6 +234,22 @@ struct cam_vfe_fe_update_args {
 	struct cam_fe_config               fe_config;
 };
 
+enum cam_vfe_bw_control_action {
+	CAM_VFE_BW_CONTROL_EXCLUDE       = 0,
+	CAM_VFE_BW_CONTROL_INCLUDE       = 1
+};
+
+/*
+ * struct cam_vfe_bw_control_args:
+ *
+ * @node_res:             Resource to get the time stamp
+ * @action:               Bandwidth control action
+ */
+struct cam_vfe_bw_control_args {
+	struct cam_isp_resource_node      *node_res;
+	enum cam_vfe_bw_control_action     action;
+};
+
 /*
  * struct cam_vfe_top_irq_evt_payload:
  *
@@ -285,15 +259,15 @@ struct cam_vfe_fe_update_args {
  * @list:                    list_head node for the payload
  * @irq_reg_val:             IRQ and Error register values, read when IRQ was
  *                           handled
- * @reg_val:                 Value of any critical register that needs to be
- *                           read at during irq handling
+ * @th_reg_val:              Value of any critical register that needs to be
+ *                           read at th to avoid any latencies in bh processing
  *
  * @ts:                      Timestamp
  */
 struct cam_vfe_top_irq_evt_payload {
 	struct list_head            list;
 	uint32_t                    irq_reg_val[CAM_IFE_IRQ_REGISTERS_MAX];
-	uint32_t                    reg_val;
+	uint32_t                    th_reg_val;
 	struct cam_isp_timestamp    ts;
 };
 
@@ -376,38 +350,6 @@ struct cam_vfe_generic_ubwc_config {
 		ubwc_plane_cfg[CAM_PACKET_MAX_PLANES - 1];
 };
 
-
-/*
- * struct cam_vfe_generic_debug_config:
- *
- * @num_counters            : Number of perf counters configured
- * @vfe_perf_counter_val    : VFE perf counter values
- * @disable_ife_mmu_prefetch: Disable IFE mmu prefetch
- */
-struct cam_vfe_generic_debug_config {
-	uint32_t  num_counters;
-	uint32_t  vfe_perf_counter_val[CAM_VFE_PERF_CNT_MAX];
-	bool      disable_ife_mmu_prefetch;
-};
-
-/*
- * cam_vfe_get_num_ifes()
- *
- * @brief:         Gets number of IFEs
- *
- * @num_ifes:      Fills number of IFES in the address passed
- */
-void cam_vfe_get_num_ifes(uint32_t *num_ifes);
-
-/*
- * cam_vfe_get_num_ife_lites()
- *
- * @brief:         Gets number of IFE-LITEs
- *
- * @num_ifes:      Fills number of IFE-LITES in the address passed
- */
-void cam_vfe_get_num_ife_lites(uint32_t *num_ife_lites);
-
 /*
  * cam_vfe_hw_init()
  *
@@ -417,8 +359,7 @@ void cam_vfe_get_num_ife_lites(uint32_t *num_ife_lites);
  *                          successful initialization
  * @hw_idx:                 Index of VFE HW
  */
-int cam_vfe_hw_init(struct cam_isp_hw_intf_data **vfe_hw,
-	uint32_t hw_idx);
+int cam_vfe_hw_init(struct cam_hw_intf **vfe_hw, uint32_t hw_idx);
 
 /*
  * cam_vfe_put_evt_payload()

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_NODE_H_
@@ -27,25 +27,21 @@
  * @ctx_size:              Context list size
  * @hw_mgr_intf:           Interface for cam_node to HW
  * @crm_node_intf:         Interface for the CRM to cam_node
- * @sd_handler:            Shutdown handler for this subdev
  *
  */
 struct cam_node {
-	char                              name[CAM_CTX_DEV_NAME_MAX_LENGTH];
-	uint32_t                          state;
+	char                         name[CAM_CTX_DEV_NAME_MAX_LENGTH];
+	uint32_t                     state;
 
 	/* context pool */
-	struct mutex                      list_mutex;
-	struct list_head                  free_ctx_list;
-	struct cam_context               *ctx_list;
-	uint32_t                          ctx_size;
+	struct mutex                 list_mutex;
+	struct list_head             free_ctx_list;
+	struct cam_context          *ctx_list;
+	uint32_t                     ctx_size;
 
 	/* interfaces */
-	struct cam_hw_mgr_intf            hw_mgr_intf;
-	struct cam_req_mgr_kmd_ops        crm_node_intf;
-
-	int (*sd_handler)(struct v4l2_subdev *sd,
-		struct v4l2_subdev_fh *fh);
+	struct cam_hw_mgr_intf       hw_mgr_intf;
+	struct cam_req_mgr_kmd_ops   crm_node_intf;
 };
 
 /**
@@ -103,18 +99,5 @@ int cam_node_init(struct cam_node *node, struct cam_hw_mgr_intf *hw_mgr_intf,
  *
  */
 void cam_node_put_ctxt_to_free_list(struct kref *ref);
-
-/**
- * cam_get_dev_handle_info()
- *
- * @brief:       provides the active dev index.
- *
- * @handle:      pointer to struct v4l2_dev
- * @ctx:         pointer to struct cam_context
- * @dev_index:   dev index
- *
- */
-int32_t cam_get_dev_handle_info(uint64_t handle,
-	struct cam_context **ctx, int32_t dev_index);
 
 #endif /* _CAM_NODE_H_ */

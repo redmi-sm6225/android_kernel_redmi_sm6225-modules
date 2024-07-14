@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -30,9 +29,6 @@
 #include "cam_icp_hw_mgr_intf.h"
 #include "cam_debug_util.h"
 #include "cam_smmu_api.h"
-#include "camera_main.h"
-#include "cam_common_util.h"
-#include "cam_context_utils.h"
 
 #define CAM_ICP_DEV_NAME        "cam-icp"
 
@@ -53,65 +49,23 @@ static const struct of_device_id cam_icp_dt_match[] = {
 	{}
 };
 
-static int cam_icp_dev_err_inject_cb(void *err_param)
+static void cam_icp_dev_iommu_fault_handler(
+	struct iommu_domain *domain, struct device *dev, unsigned long iova,
+	int flags, void *token, uint32_t buf_info)
 {
-	int i  = 0;
-
-	for (i = 0; i < CAM_ICP_CTX_MAX; i++) {
-		if (g_icp_dev.ctx[i].dev_hdl ==
-			((struct cam_err_inject_param *)err_param)->dev_hdl) {
-			CAM_INFO(CAM_ICP, "ICP err inject dev_hdl found:%d",
-				g_icp_dev.ctx[i].dev_hdl);
-			cam_context_add_err_inject(&g_icp_dev.ctx[i], err_param);
-			return 0;
-		}
-	}
-	CAM_ERR(CAM_ICP, "No dev hdl found");
-	return -ENODEV;
-}
-
-static void cam_icp_dev_iommu_fault_handler(struct cam_smmu_pf_info *pf_smmu_info)
-{
-	int i, rc;
+	int i = 0;
 	struct cam_node *node = NULL;
-	struct cam_hw_dump_pf_args pf_args = {0};
 
-	if (!pf_smmu_info || !pf_smmu_info->token) {
+	if (!token) {
 		CAM_ERR(CAM_ICP, "invalid token in page handler cb");
 		return;
 	}
 
-	node = (struct cam_node *)pf_smmu_info->token;
+	node = (struct cam_node *)token;
 
-	pf_args.pf_smmu_info = pf_smmu_info;
-
-	for (i = 0; i < node->ctx_size; i++) {
-		cam_context_dump_pf_info(&(node->ctx_list[i]), &pf_args);
-		if (pf_args.pf_context_info.ctx_found)
-			/* found ctx and packet of the faulted address */
-			break;
-	}
-
-	if (i == node->ctx_size) {
-		/* Faulted ctx not found. Report PF to userspace */
-		rc = cam_context_send_pf_evt(NULL, &pf_args);
-		if (rc)
-			CAM_ERR(CAM_ICP,
-				"Failed to notify PF event to userspace rc: %d", rc);
-	}
-}
-
-static void cam_icp_dev_mini_dump_cb(void *priv, void *args)
-{
-	struct cam_context *ctx = NULL;
-
-	if (!priv || !args) {
-		CAM_ERR(CAM_ICP, "Invalid param priv: %pK args %pK", priv, args);
-		return;
-	}
-
-	ctx = (struct cam_context *)priv;
-	cam_context_mini_dump_from_hw(ctx, args);
+	for (i = 0; i < node->ctx_size; i++)
+		cam_context_dump_pf_info(&(node->ctx_list[i]), iova,
+			buf_info);
 }
 
 static int cam_icp_subdev_open(struct v4l2_subdev *sd,
@@ -149,7 +103,7 @@ end:
 	return rc;
 }
 
-static int cam_icp_subdev_close_internal(struct v4l2_subdev *sd,
+static int cam_icp_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
 	int rc = 0;
@@ -159,6 +113,7 @@ static int cam_icp_subdev_close_internal(struct v4l2_subdev *sd,
 	mutex_lock(&g_icp_dev.icp_lock);
 	if (g_icp_dev.open_cnt <= 0) {
 		CAM_DBG(CAM_ICP, "ICP subdev is already closed");
+		rc = -EINVAL;
 		goto end;
 	}
 	g_icp_dev.open_cnt--;
@@ -183,20 +138,7 @@ static int cam_icp_subdev_close_internal(struct v4l2_subdev *sd,
 
 end:
 	mutex_unlock(&g_icp_dev.icp_lock);
-	return rc;
-}
-
-static int cam_icp_subdev_close(struct v4l2_subdev *sd,
-	struct v4l2_subdev_fh *fh)
-{
-	bool crm_active = cam_req_mgr_is_open();
-
-	if (crm_active) {
-		CAM_DBG(CAM_ICP, "CRM is ACTIVE, close should be from CRM");
-		return 0;
-	}
-
-	return cam_icp_subdev_close_internal(sd, fh);
+	return 0;
 }
 
 const struct v4l2_subdev_internal_ops cam_icp_subdev_internal_ops = {
@@ -204,14 +146,12 @@ const struct v4l2_subdev_internal_ops cam_icp_subdev_internal_ops = {
 	.close = cam_icp_subdev_close,
 };
 
-static int cam_icp_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_icp_probe(struct platform_device *pdev)
 {
 	int rc = 0, i = 0;
 	struct cam_node *node;
 	struct cam_hw_mgr_intf *hw_mgr_intf;
 	int iommu_hdl = -1;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	if (!pdev) {
 		CAM_ERR(CAM_ICP, "pdev is NULL");
@@ -220,7 +160,6 @@ static int cam_icp_component_bind(struct device *dev,
 
 	g_icp_dev.sd.pdev = pdev;
 	g_icp_dev.sd.internal_ops = &cam_icp_subdev_internal_ops;
-	g_icp_dev.sd.close_seq_prior = CAM_SD_CLOSE_MEDIUM_PRIORITY;
 	rc = cam_subdev_probe(&g_icp_dev.sd, pdev, CAM_ICP_DEV_NAME,
 		CAM_ICP_DEVICE_TYPE);
 	if (rc) {
@@ -232,13 +171,12 @@ static int cam_icp_component_bind(struct device *dev,
 
 	hw_mgr_intf = kzalloc(sizeof(*hw_mgr_intf), GFP_KERNEL);
 	if (!hw_mgr_intf) {
-		rc = -ENOMEM;
-		CAM_ERR(CAM_ICP, "Memory allocation fail");
+		rc = -EINVAL;
 		goto hw_alloc_fail;
 	}
 
 	rc = cam_icp_hw_mgr_init(pdev->dev.of_node, (uint64_t *)hw_mgr_intf,
-		&iommu_hdl, cam_icp_dev_mini_dump_cb);
+		&iommu_hdl);
 	if (rc) {
 		CAM_ERR(CAM_ICP, "ICP HW manager init failed: %d", rc);
 		goto hw_init_fail;
@@ -247,7 +185,7 @@ static int cam_icp_component_bind(struct device *dev,
 	for (i = 0; i < CAM_ICP_CTX_MAX; i++) {
 		g_icp_dev.ctx_icp[i].base = &g_icp_dev.ctx[i];
 		rc = cam_icp_context_init(&g_icp_dev.ctx_icp[i],
-					hw_mgr_intf, i, iommu_hdl);
+					hw_mgr_intf, i);
 		if (rc) {
 			CAM_ERR(CAM_ICP, "ICP context init failed");
 			goto ctx_fail;
@@ -261,17 +199,13 @@ static int cam_icp_component_bind(struct device *dev,
 		goto ctx_fail;
 	}
 
-	cam_common_register_err_inject_cb(cam_icp_dev_err_inject_cb,
-		CAM_COMMON_ERR_INJECT_HW_ICP);
-
-	node->sd_handler = cam_icp_subdev_close_internal;
 	cam_smmu_set_client_page_fault_handler(iommu_hdl,
 		cam_icp_dev_iommu_fault_handler, node);
 
 	g_icp_dev.open_cnt = 0;
 	mutex_init(&g_icp_dev.icp_lock);
 
-	CAM_DBG(CAM_ICP, "Component bound successfully");
+	CAM_DBG(CAM_ICP, "ICP probe complete");
 
 	return rc;
 
@@ -286,57 +220,39 @@ probe_fail:
 	return rc;
 }
 
-static void cam_icp_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
+static int cam_icp_remove(struct platform_device *pdev)
 {
 	int i;
 	struct v4l2_subdev *sd;
-	struct platform_device *pdev = to_platform_device(dev);
+	struct cam_subdev *subdev;
 
 	if (!pdev) {
 		CAM_ERR(CAM_ICP, "pdev is NULL");
-		return;
+		return -ENODEV;
 	}
 
 	sd = platform_get_drvdata(pdev);
 	if (!sd) {
 		CAM_ERR(CAM_ICP, "V4l2 subdev is NULL");
-		return;
+		return -ENODEV;
+	}
+
+	subdev = v4l2_get_subdevdata(sd);
+	if (!subdev) {
+		CAM_ERR(CAM_ICP, "cam subdev is NULL");
+		return -ENODEV;
 	}
 
 	for (i = 0; i < CAM_ICP_CTX_MAX; i++)
 		cam_icp_context_deinit(&g_icp_dev.ctx_icp[i]);
-
-	cam_icp_hw_mgr_deinit();
 	cam_node_deinit(g_icp_dev.node);
 	cam_subdev_remove(&g_icp_dev.sd);
 	mutex_destroy(&g_icp_dev.icp_lock);
-}
 
-const static struct component_ops cam_icp_component_ops = {
-	.bind = cam_icp_component_bind,
-	.unbind = cam_icp_component_unbind,
-};
-
-static int cam_icp_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_ICP, "Adding ICP component");
-	rc = component_add(&pdev->dev, &cam_icp_component_ops);
-	if (rc)
-		CAM_ERR(CAM_ICP, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
-static int cam_icp_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_icp_component_ops);
 	return 0;
 }
 
-struct platform_driver cam_icp_driver = {
+static struct platform_driver cam_icp_driver = {
 	.probe = cam_icp_probe,
 	.remove = cam_icp_remove,
 	.driver = {

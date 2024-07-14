@@ -9,8 +9,6 @@
 /* Max len for tag name for header while dumping cmd buffer*/
 #define CAM_CDM_CMD_TAG_MAX_LEN 32
 
-#include <linux/types.h>
-
 enum cam_cdm_command {
 	CAM_CDM_CMD_UNUSED = 0x0,
 	CAM_CDM_CMD_DMI = 0x1,
@@ -24,7 +22,7 @@ enum cam_cdm_command {
 	CAM_CDM_CMD_PERF_CTRL = 0x9,
 	CAM_CDM_CMD_DMI_32 = 0xa,
 	CAM_CDM_CMD_DMI_64 = 0xb,
-	CAM_CDM_CMD_COMP_WAIT = 0xc,
+	CAM_CDM_COMP_WAIT = 0xc,
 	CAM_CDM_CLEAR_COMP_WAIT = 0xd,
 	CAM_CDM_WAIT_PREFETCH_DISABLE = 0xe,
 	CAM_CDM_CMD_PRIVATE_BASE = 0xf,

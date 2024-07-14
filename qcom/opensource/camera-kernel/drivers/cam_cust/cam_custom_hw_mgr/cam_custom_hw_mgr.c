@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -422,6 +421,10 @@ static int cam_custom_mgr_start_hw(void *hw_mgr_priv,
 
 start_only:
 
+	/* Start custom HW first */
+	if (rc < 0)
+		goto err;
+
 	/* Start custom csid */
 	list_for_each_entry(hw_mgr_res,
 		&ctx->res_list_custom_csid, list) {
@@ -466,87 +469,6 @@ static int cam_custom_mgr_read(void *hw_mgr_priv, void *read_args)
 static int cam_custom_mgr_write(void *hw_mgr_priv, void *write_args)
 {
 	return -EPERM;
-}
-
-static int cam_custom_hw_mgr_notify(
-	uint32_t evt_id,
-	struct cam_custom_hw_mgr_ctx *custom_ctx,
-	struct cam_custom_hw_event_info *evt_info)
-{
-	int rc = 0;
-	struct cam_custom_hw_reg_update_event_data reg_upd_data;
-	struct cam_custom_hw_done_event_data done_evt_data;
-	struct cam_custom_hw_error_event_data err_evt_data;
-
-	switch (evt_id) {
-	case CAM_CUSTOM_HW_EVENT_RUP_DONE:
-		CAM_DBG(CAM_CUSTOM, "Notify RUP for ctx %u",
-			custom_ctx->ctx_index);
-		/* fill the evt data struct */
-		custom_ctx->event_cb(custom_ctx->cb_priv,
-			CAM_CUSTOM_HW_EVENT_RUP_DONE, &reg_upd_data);
-		break;
-	case CAM_CUSTOM_HW_EVENT_FRAME_DONE:
-		CAM_DBG(CAM_CUSTOM, "Notify FRAME DONE for ctx %u",
-			custom_ctx->ctx_index);
-		/* fill the evt data struct */
-		done_evt_data.num_handles = 1;
-		custom_ctx->event_cb(custom_ctx->cb_priv,
-			CAM_CUSTOM_HW_EVENT_RUP_DONE, &done_evt_data);
-		break;
-	case CAM_CUSTOM_HW_EVENT_ERROR:
-		CAM_DBG(CAM_CUSTOM, "Notify ERROR for ctx %u",
-			custom_ctx->ctx_index);
-		/* fill the evt data struct */
-		custom_ctx->event_cb(custom_ctx->cb_priv,
-			CAM_CUSTOM_HW_EVENT_RUP_DONE, &err_evt_data);
-		break;
-	default:
-		CAM_ERR(CAM_CUSTOM, "Invalid evt_id %u", evt_id);
-		rc = -EINVAL;
-		break;
-	}
-
-	return rc;
-}
-
-static int cam_custom_hw_mgr_evt_handler(
-	void *priv, uint32_t evt_id, void *hw_evt_info)
-{
-	int                              rc = 0;
-	struct cam_custom_hw_mgr_ctx    *custom_ctx = NULL;
-	struct cam_custom_hw_mgr_ctx    *custom_ctx_tmp = NULL;
-	struct cam_custom_hw_event_info *evt_info = NULL;
-	struct cam_custom_hw_mgr        *hw_mgr = &g_custom_hw_mgr;
-	bool                             ctx_found = false;
-
-	if (!hw_evt_info) {
-		CAM_ERR(CAM_CUSTOM, "invalid evt info");
-		return -EINVAL;
-	}
-
-	CAM_DBG(CAM_CUSTOM, "Invoked for HW Event ID 0x%x",
-		evt_id);
-	evt_info = (struct cam_custom_hw_event_info *)hw_evt_info;
-
-	list_for_each_entry_safe(custom_ctx, custom_ctx_tmp,
-		&hw_mgr->used_ctx_list, list) {
-		if (custom_ctx->task_type  == evt_info->task_type) {
-			ctx_found = true;
-			rc = cam_custom_hw_mgr_notify(evt_id, custom_ctx,
-				evt_info);
-			if (rc) {
-				CAM_ERR(CAM_CUSTOM, "Failed to notify");
-				return rc;
-			}
-			break;
-		}
-	}
-
-	if (!ctx_found)
-		CAM_DBG(CAM_CUSTOM, "Failed to find affected ctx");
-
-	return rc;
 }
 
 static int cam_custom_hw_mgr_put_ctx(
@@ -619,8 +541,7 @@ static int cam_custom_hw_mgr_get_res(
 
 static enum cam_ife_pix_path_res_id
 	cam_custom_hw_mgr_get_csid_res_type(
-	uint32_t						out_port_type,
-	struct cam_custom_hw_mgr_ctx   *custom_ctx)
+	uint32_t						out_port_type)
 {
 	enum cam_ife_pix_path_res_id path_id;
 
@@ -632,11 +553,9 @@ static enum cam_ife_pix_path_res_id
 		break;
 	case CAM_CUSTOM_OUT_RES_UDI_1:
 		path_id = CAM_IFE_PIX_PATH_RES_UDI_1;
-		custom_ctx->task_type = CAM_CUSTOM_EVENT_TASK2;
 		break;
 	case CAM_CUSTOM_OUT_RES_UDI_2:
 		path_id = CAM_IFE_PIX_PATH_RES_UDI_2;
-		custom_ctx->task_type = CAM_CUSTOM_EVENT_TASK3;
 		break;
 	default:
 		path_id = CAM_IFE_PIX_PATH_RES_MAX;
@@ -749,7 +668,7 @@ static int cam_custom_hw_mgr_acquire_csid_res(
 	for (i = 0; i < in_port_info->num_out_res; i++) {
 		out_port = &in_port_info->data[i];
 		path_res_id = cam_custom_hw_mgr_get_csid_res_type(
-			out_port->res_type, custom_ctx);
+			out_port->res_type);
 
 		if (path_res_id == CAM_IFE_PIX_PATH_RES_MAX) {
 			CAM_WARN(CAM_CUSTOM, "Invalid out port res_type %u",
@@ -774,6 +693,7 @@ static int cam_custom_hw_mgr_acquire_csid_res(
 		memset(&custom_csid_acquire, 0, sizeof(custom_csid_acquire));
 		custom_csid_acquire.res_id = path_res_id;
 		custom_csid_acquire.res_type = CAM_ISP_RESOURCE_PIX_PATH;
+		custom_csid_acquire.cid = cid_rsrc_node->res_id;
 		custom_csid_acquire.in_port = in_port_info;
 		custom_csid_acquire.out_port = out_port;
 		custom_csid_acquire.sync_mode = 0;
@@ -906,9 +826,7 @@ static int cam_custom_mgr_release_hw(void *hw_mgr_priv,
 
 	cam_custom_hw_mgr_release_hw_for_ctx(custom_ctx);
 	list_del_init(&custom_ctx->list);
-	custom_ctx->scratch_buffer_addr = 0;
 	custom_ctx->ctx_in_use = 0;
-	custom_ctx->task_type = CAM_CUSTOM_EVENT_INVALID;
 	cam_custom_hw_mgr_put_ctx(&g_custom_hw_mgr.free_ctx_list, &custom_ctx);
 	CAM_DBG(CAM_CUSTOM, "Release Exit..");
 	return rc;
@@ -954,7 +872,7 @@ static int cam_custom_hw_mgr_acquire_get_unified_dev_str(
 	port_info->vc[0]           =  in->vc[0];
 	port_info->dt[0]           =  in->dt[0];
 	port_info->num_valid_vc_dt =  in->num_valid_vc_dt;
-	port_info->format[0]       =  in->format;
+	port_info->format          =  in->format;
 	port_info->test_pattern    =  in->test_pattern;
 	port_info->usage_type      =  in->usage_type;
 	port_info->left_start      =  in->left_start;
@@ -1017,8 +935,6 @@ static int cam_custom_mgr_acquire_hw_for_ctx(
 		if (!hw_intf)
 			continue;
 
-		acq.event_cb = cam_custom_hw_mgr_evt_handler;
-		acq.priv = custom_ctx;
 		rc = hw_intf->hw_ops.reserve(hw_intf->hw_priv,
 			&acq, sizeof(acq));
 		if (rc) {
@@ -1098,7 +1014,6 @@ static int cam_custom_mgr_acquire_hw(
 	}
 
 	custom_ctx->ctx_in_use = 1;
-	custom_ctx->scratch_buffer_addr = 0;
 	acquire_args->ctxt_to_hw_map = custom_ctx;
 	cam_custom_hw_mgr_put_ctx(&custom_hw_mgr->used_ctx_list, &custom_ctx);
 	CAM_DBG(CAM_CUSTOM, "Exit...(success)");
@@ -1119,23 +1034,17 @@ static int cam_custom_add_io_buffers(
 	int                                   iommu_hdl,
 	struct cam_hw_prepare_update_args    *prepare)
 {
-	int rc = 0, i = 0, num_out_buf = 0;
+	int rc = 0, i = 0;
 	int32_t                             hdl;
 	uint32_t                            plane_id;
-	size_t                              size;
 	struct cam_buf_io_cfg              *io_cfg;
-	struct cam_hw_fence_map_entry      *out_map_entries;
-	struct cam_custom_prepare_hw_update_data *prepare_hw_data;
-	bool                                is_buf_secure;
 
 	io_cfg = (struct cam_buf_io_cfg *)((uint8_t *)
 			&prepare->packet->payload +
 			prepare->packet->io_configs_offset);
-	prepare_hw_data =
-			(struct cam_custom_prepare_hw_update_data *)
-			prepare->priv;
 
 	/* Validate hw update entries */
+
 	for (i = 0; i < prepare->packet->num_io_configs; i++) {
 		CAM_DBG(CAM_CUSTOM, "======= io config idx %d ============", i);
 		CAM_DBG(CAM_CUSTOM,
@@ -1149,69 +1058,29 @@ static int cam_custom_add_io_buffers(
 		if (io_cfg[i].direction == CAM_BUF_OUTPUT) {
 			CAM_DBG(CAM_CUSTOM,
 				"output fence 0x%x", io_cfg[i].fence);
-			out_map_entries =
-				&prepare->out_map_entries[num_out_buf];
-			if (num_out_buf < prepare->max_out_map_entries) {
-				out_map_entries->resource_handle =
-					io_cfg[i].resource_type;
-				out_map_entries->sync_id =
-					io_cfg[i].fence;
-				num_out_buf++;
-			} else {
-				CAM_ERR(CAM_CUSTOM, "out: %d max: %d",
-					num_out_buf,
-					prepare->max_out_map_entries);
-				return -EINVAL;
-			}
 		} else if (io_cfg[i].direction == CAM_BUF_INPUT) {
 			CAM_DBG(CAM_CUSTOM,
 				"input fence 0x%x", io_cfg[i].fence);
-			return -EINVAL;
 		} else {
 			CAM_ERR(CAM_CUSTOM, "Invalid io config direction :%d",
 				io_cfg[i].direction);
 			return -EINVAL;
 		}
 
-		if (io_cfg[i].direction == CAM_BUF_OUTPUT) {
-			for (plane_id = 0; plane_id < CAM_PACKET_MAX_PLANES;
-				plane_id++) {
-				/* for custom HW it's one plane only */
-				if (!io_cfg[i].mem_handle[plane_id])
-					continue;
+		for (plane_id = 0; plane_id < CAM_PACKET_MAX_PLANES;
+			plane_id++) {
+			if (!io_cfg[i].mem_handle[plane_id])
+				continue;
 
-				hdl = io_cfg[i].mem_handle[plane_id];
-				is_buf_secure = cam_mem_is_secure_buf(hdl);
-				if (is_buf_secure) {
-					CAM_ERR(CAM_CUSTOM,
-						"secure buffer not supported");
-					return -EINVAL;
-				}
-
-				rc = cam_mem_get_io_buf(
-					io_cfg[i].mem_handle[plane_id],
-					iommu_hdl,
-					&prepare_hw_data->io_addr[plane_id],
-					&size, NULL);
-				if (rc) {
-					CAM_ERR(CAM_CUSTOM,
-						"No io addr for plane: %d",
-						plane_id);
-					return -EINVAL;
-				}
-
-				prepare_hw_data->io_addr[plane_id] +=
-					io_cfg[i].offsets[plane_id];
-				CAM_DBG(CAM_CUSTOM,
-					"handle 0x%x for plane %d addr %pK",
-					hdl, plane_id,
-					prepare_hw_data->io_addr[plane_id]);
-			}
+			hdl = io_cfg[i].mem_handle[plane_id];
+			CAM_DBG(CAM_CUSTOM, "handle 0x%x for plane %d",
+				hdl, plane_id);
+			/* Use cam_mem_get_io_buf() to retrieve iova */
 		}
+
+		/* Do other I/O config operations */
 	}
 
-	prepare->num_out_map_entries = num_out_buf;
-	prepare->num_in_map_entries = 0;
 	return rc;
 }
 
@@ -1247,10 +1116,6 @@ static int cam_custom_mgr_prepare_hw_update(void *hw_mgr_priv,
 		(prepare->packet->header.op_code & 0xFFF);
 	ctx = (struct cam_custom_hw_mgr_ctx *) prepare->ctxt_to_hw_map;
 
-	prepare->num_hw_update_entries = 0;
-	prepare->num_in_map_entries = 0;
-	prepare->num_out_map_entries = 0;
-
 	/* Test purposes-check the data in cmd buffer */
 	cmd_desc = (struct cam_cmd_buf_desc *)
 		((uint8_t *)&prepare->packet->payload +
@@ -1265,13 +1130,7 @@ static int cam_custom_mgr_prepare_hw_update(void *hw_mgr_priv,
 			custom_buf_type1->custom_info);
 	}
 
-	/*
-	 * Populate scratch buffer addr here based on INIT
-	 */
-	ctx->scratch_buffer_addr = 0x0;
-	prepare_hw_data->num_cfg = 0;
 	cam_custom_add_io_buffers(hw_mgr->img_iommu_hdl, prepare);
-	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return 0;
 }
 
@@ -1359,7 +1218,6 @@ static int cam_custom_mgr_config_hw(void *hw_mgr_priv,
 	struct cam_custom_hw_mgr_res *res;
 	struct cam_hw_config_args    *cfg;
 	struct cam_hw_intf           *hw_intf = NULL;
-	struct cam_custom_prepare_hw_update_data *prepare_hw_data;
 
 	CAM_DBG(CAM_CUSTOM, "Enter");
 	if (!hw_mgr_priv || !hw_config_args) {
@@ -1374,23 +1232,6 @@ static int cam_custom_mgr_config_hw(void *hw_mgr_priv,
 	if (!custom_ctx->ctx_in_use) {
 		CAM_ERR(CAM_CUSTOM, "Invalid context parameters");
 		return -EPERM;
-	}
-
-	prepare_hw_data =
-		(struct cam_custom_prepare_hw_update_data *)
-		cfg->priv;
-	for (i = 0; i < prepare_hw_data->num_cfg; i++) {
-		CAM_DBG(CAM_CUSTOM, "plane %d io_addr %pK",
-			i, prepare_hw_data->io_addr[i]);
-	}
-
-	prepare_hw_data =
-		(struct cam_custom_prepare_hw_update_data *)cfg->priv;
-	for (i = 0; i < prepare_hw_data->num_cfg; i++) {
-		CAM_DBG(CAM_CUSTOM, "plane %d io_addr %p cfg %u", i,
-			prepare_hw_data->io_addr[i],
-			prepare_hw_data->num_cfg);
-		/* this will be ZSLBuffer addr */
 	}
 
 	for (i = 0; i < CAM_CUSTOM_HW_SUB_MOD_MAX; i++) {
@@ -1414,55 +1255,30 @@ static int cam_custom_mgr_config_hw(void *hw_mgr_priv,
 	return rc;
 }
 
-static int cam_custom_mgr_cmd(void *hw_mgr_priv, void *cmd_args)
+static int cam_custom_hw_mgr_irq_cb(void *data,
+	struct cam_custom_hw_cb_args *cb_args)
 {
-	int rc = 0;
-	struct cam_hw_cmd_args        *hw_cmd_args = cmd_args;
-	struct cam_custom_hw_cmd_args *custom_hw_cmd_args;
-	struct cam_custom_hw_mgr_ctx  *custom_ctx = NULL;
+	struct cam_custom_sub_mod_req_to_dev *proc_req;
+	struct cam_hw_done_event_data         evt_data;
+	struct cam_custom_hw_mgr_ctx         *custom_ctx;
+	uint32_t ctx_idx;
 
-	if (!hw_mgr_priv || !cmd_args) {
-		CAM_ERR(CAM_CUSTOM, "Invalid arguments");
-		return -EINVAL;
+	proc_req = cb_args->req_info;
+	ctx_idx = proc_req->ctx_idx;
+	custom_ctx = &g_custom_hw_mgr.ctx_pool[ctx_idx];
+
+	if (!custom_ctx->ctx_in_use) {
+		CAM_ERR(CAM_CUSTOM, "ctx %u not in use", ctx_idx);
+		return 0;
 	}
 
-	custom_ctx =
-		(struct cam_custom_hw_mgr_ctx *)
-		hw_cmd_args->ctxt_to_hw_map;
+	/* Based on irq status notify success/failure */
 
-	if (!custom_ctx || !custom_ctx->ctx_in_use) {
-		CAM_ERR(CAM_CUSTOM, "Fatal: Invalid context is used");
-		return -EPERM;
-	}
+	evt_data.request_id = proc_req->req_id;
+	custom_ctx->event_cb(custom_ctx->cb_priv,
+		CAM_CUSTOM_EVENT_BUF_DONE, &evt_data);
 
-	switch (hw_cmd_args->cmd_type) {
-	case CAM_HW_MGR_CMD_INTERNAL:
-		if (!hw_cmd_args->u.internal_args) {
-			CAM_ERR(CAM_CUSTOM, "Invalid cmd arguments");
-			return -EINVAL;
-		}
-
-		custom_hw_cmd_args = (struct cam_custom_hw_cmd_args *)
-					hw_cmd_args->u.internal_args;
-
-		switch (custom_hw_cmd_args->cmd_type) {
-		case CAM_CUSTOM_HW_MGR_PROG_DEFAULT_CONFIG:
-			CAM_DBG(CAM_CUSTOM, "configure RUP and scratch buffer");
-			//use custom_ctx->scratch_buffer_addr
-			break;
-		default:
-			CAM_ERR(CAM_CUSTOM, "Invalid HW mgr command:0x%x",
-				hw_cmd_args->cmd_type);
-			rc = -EINVAL;
-			break;
-		}
-		break;
-	default:
-		rc = -EINVAL;
-		break;
-	}
-
-	return rc;
+	return 0;
 }
 
 int cam_custom_hw_mgr_init(struct device_node *of_node,
@@ -1471,7 +1287,8 @@ int cam_custom_hw_mgr_init(struct device_node *of_node,
 	int rc = 0;
 	int i, j;
 	struct cam_custom_hw_mgr_ctx *ctx_pool;
-	uint32_t num_custom = 0;
+	struct cam_custom_sub_mod_set_irq_cb irq_cb_args;
+	struct cam_hw_intf *hw_intf = NULL;
 
 	memset(&g_custom_hw_mgr, 0, sizeof(g_custom_hw_mgr));
 	mutex_init(&g_custom_hw_mgr.ctx_mutex);
@@ -1481,6 +1298,20 @@ int cam_custom_hw_mgr_init(struct device_node *of_node,
 		/* Initialize sub modules */
 		rc = cam_custom_hw_sub_mod_init(
 				&g_custom_hw_mgr.custom_hw[i], i);
+
+		/* handle in case init fails */
+		if (g_custom_hw_mgr.custom_hw[i]) {
+			hw_intf = g_custom_hw_mgr.custom_hw[i];
+			if (hw_intf->hw_ops.process_cmd) {
+				irq_cb_args.custom_hw_mgr_cb =
+					cam_custom_hw_mgr_irq_cb;
+				irq_cb_args.data =
+					g_custom_hw_mgr.custom_hw[i]->hw_priv;
+				hw_intf->hw_ops.process_cmd(hw_intf->hw_priv,
+					CAM_CUSTOM_SET_IRQ_CB, &irq_cb_args,
+					sizeof(irq_cb_args));
+			}
+		}
 	}
 
 	for (i = 0; i < CAM_CUSTOM_CSID_HW_MAX; i++) {
@@ -1545,15 +1376,9 @@ int cam_custom_hw_mgr_init(struct device_node *of_node,
 	hw_mgr_intf->hw_prepare_update = cam_custom_mgr_prepare_hw_update;
 	hw_mgr_intf->hw_config = cam_custom_mgr_config_hw;
 	hw_mgr_intf->hw_reset = cam_custom_hw_mgr_reset;
-	hw_mgr_intf->hw_cmd = cam_custom_mgr_cmd;
 
 	if (iommu_hdl)
 		*iommu_hdl = g_custom_hw_mgr.img_iommu_hdl;
-
-	cam_custom_get_num_custom(&num_custom);
-	rc = cam_cpas_prepare_subpart_info(CAM_SYSFS_CUSTOM_HW_IDX, num_custom);
-	if (rc)
-		CAM_ERR(CAM_CUSTOM, "Failed to populate num_custom, rc: %d", rc);
 
 	CAM_DBG(CAM_CUSTOM, "HW manager initialized");
 	return 0;

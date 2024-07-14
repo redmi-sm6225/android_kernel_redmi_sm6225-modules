@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -18,40 +17,15 @@
 #include "cam_icp_hw_mgr_intf.h"
 #include "cam_cpas_api.h"
 #include "cam_debug_util.h"
-#include "camera_main.h"
 
 static struct cam_bps_device_hw_info cam_bps_hw_info = {
 	.hw_idx = 0,
-	.pwr_ctrl = 0x48,
-	.pwr_status = 0x44,
-	.top_rst_cmd = 0x1008,
-	.top_irq_status = 0x100C,
-	.cdm_rst_cmd = 0x10,
-	.cdm_irq_status = 0x44,
-	.cdm_rst_val = 0xF,
+	.pwr_ctrl = 0x5c,
+	.pwr_status = 0x58,
+	.reserved = 0,
 };
 
-static struct cam_bps_device_hw_info cam_bps680_hw_info = {
-	.hw_idx = 0,
-	.pwr_ctrl = 0x48,
-	.pwr_status = 0x44,
-	.top_rst_cmd = 0x508,
-	.top_irq_status = 0x50C,
-	.cdm_rst_cmd = 0x10,
-	.cdm_irq_status = 0x44,
-	.cdm_rst_val = 0x7F,
-};
-
-static struct cam_bps_device_hw_info cam_bps880_hw_info = {
-	.hw_idx = 0,
-	.pwr_ctrl = 0x48,
-	.pwr_status = 0x44,
-	.top_rst_cmd = 0x1008,
-	.top_irq_status = 0x100C,
-	.cdm_rst_cmd = 0x10,
-	.cdm_irq_status = 0x44,
-	.cdm_rst_val = 0x7F,
-};
+static char bps_dev_name[8];
 
 static bool cam_bps_cpas_cb(uint32_t client_handle, void *userdata,
 	struct cam_cpas_irq_data *irq_data)
@@ -110,8 +84,7 @@ int cam_bps_register_cpas(struct cam_hw_soc_info *soc_info,
 	return rc;
 }
 
-static int cam_bps_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+int cam_bps_probe(struct platform_device *pdev)
 {
 	struct cam_hw_info            *bps_dev = NULL;
 	struct cam_hw_intf            *bps_dev_intf = NULL;
@@ -119,7 +92,6 @@ static int cam_bps_component_bind(struct device *dev,
 	struct cam_bps_device_core_info   *core_info = NULL;
 	struct cam_bps_device_hw_info     *hw_info = NULL;
 	int                                rc = 0;
-	struct platform_device *pdev = to_platform_device(dev);
 
 	bps_dev_intf = kzalloc(sizeof(struct cam_hw_intf), GFP_KERNEL);
 	if (!bps_dev_intf)
@@ -134,9 +106,13 @@ static int cam_bps_component_bind(struct device *dev,
 		return -ENOMEM;
 	}
 
+	memset(bps_dev_name, 0, sizeof(bps_dev_name));
+	snprintf(bps_dev_name, sizeof(bps_dev_name),
+		"bps%1u", bps_dev_intf->hw_idx);
+
 	bps_dev->soc_info.pdev = pdev;
 	bps_dev->soc_info.dev = &pdev->dev;
-	bps_dev->soc_info.dev_name = pdev->name;
+	bps_dev->soc_info.dev_name = bps_dev_name;
 	bps_dev_intf->hw_priv = bps_dev;
 	bps_dev_intf->hw_ops.init = cam_bps_init_hw;
 	bps_dev_intf->hw_ops.deinit = cam_bps_deinit_hw;
@@ -162,7 +138,7 @@ static int cam_bps_component_bind(struct device *dev,
 		rc = -EINVAL;
 		return rc;
 	}
-	hw_info = (struct cam_bps_device_hw_info *)match_dev->data;
+	hw_info = &cam_bps_hw_info;
 	core_info->bps_hw_info = hw_info;
 
 	rc = cam_bps_init_soc_resources(&bps_dev->soc_info, cam_bps_irq,
@@ -189,53 +165,10 @@ static int cam_bps_component_bind(struct device *dev,
 	mutex_init(&bps_dev->hw_mutex);
 	spin_lock_init(&bps_dev->hw_lock);
 	init_completion(&bps_dev->hw_complete);
-	CAM_DBG(CAM_ICP, "BPS:%d component bound successfully",
+	CAM_DBG(CAM_ICP, "BPS%d probe successful",
 		bps_dev_intf->hw_idx);
 
 	return rc;
-}
-
-static void cam_bps_component_unbind(struct device *dev,
-	struct device *master_dev, void *data)
-{
-	struct cam_hw_info            *bps_dev = NULL;
-	struct cam_hw_intf            *bps_dev_intf = NULL;
-	struct cam_bps_device_core_info   *core_info = NULL;
-	struct platform_device *pdev = to_platform_device(dev);
-
-	CAM_DBG(CAM_ICP, "Unbinding component: %s", pdev->name);
-	bps_dev_intf = platform_get_drvdata(pdev);
-	bps_dev = bps_dev_intf->hw_priv;
-	core_info = (struct cam_bps_device_core_info *)bps_dev->core_info;
-	cam_cpas_unregister_client(core_info->cpas_handle);
-	cam_bps_deinit_soc_resources(&bps_dev->soc_info);
-
-	kfree(bps_dev->core_info);
-	kfree(bps_dev);
-	kfree(bps_dev_intf);
-}
-
-const static struct component_ops cam_bps_component_ops = {
-	.bind = cam_bps_component_bind,
-	.unbind = cam_bps_component_unbind,
-};
-
-int cam_bps_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_ICP, "Adding BPS component");
-	rc = component_add(&pdev->dev, &cam_bps_component_ops);
-	if (rc)
-		CAM_ERR(CAM_ICP, "failed to add component rc: %d", rc);
-
-	return rc;
-}
-
-static int cam_bps_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &cam_bps_component_ops);
-	return 0;
 }
 
 static const struct of_device_id cam_bps_dt_match[] = {
@@ -243,21 +176,12 @@ static const struct of_device_id cam_bps_dt_match[] = {
 		.compatible = "qcom,cam-bps",
 		.data = &cam_bps_hw_info,
 	},
-	{
-		.compatible = "qcom,cam-bps680",
-		.data = &cam_bps680_hw_info,
-	},
-	{
-		.compatible = "qcom,cam-bps880",
-		.data = &cam_bps880_hw_info,
-	},
 	{}
 };
 MODULE_DEVICE_TABLE(of, cam_bps_dt_match);
 
-struct platform_driver cam_bps_driver = {
+static struct platform_driver cam_bps_driver = {
 	.probe = cam_bps_probe,
-	.remove = cam_bps_remove,
 	.driver = {
 		.name = "cam-bps",
 		.owner = THIS_MODULE,

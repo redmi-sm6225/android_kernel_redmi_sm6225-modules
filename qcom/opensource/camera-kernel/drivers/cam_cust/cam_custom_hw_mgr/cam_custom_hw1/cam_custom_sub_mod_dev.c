@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -11,10 +11,11 @@
 #include "cam_custom_sub_mod_core.h"
 #include "cam_custom_sub_mod_soc.h"
 #include "cam_debug_util.h"
-#include "camera_main.h"
 
 static struct cam_hw_intf *cam_custom_hw_sub_mod_list
 	[CAM_CUSTOM_SUB_MOD_MAX_INSTANCES] = {0, 0};
+
+static char cam_custom_hw_sub_mod_name[8];
 
 struct cam_custom_device_hw_info cam_custom_hw_info = {
 	.hw_ver = 0x0,
@@ -38,14 +39,12 @@ int cam_custom_hw_sub_mod_init(struct cam_hw_intf **custom_hw, uint32_t hw_idx)
 	return 0;
 }
 
-static int cam_custom_hw_sub_mod_component_bind(struct device *dev,
-	struct device *master_dev, void *data)
+int cam_custom_hw_sub_mod_probe(struct platform_device *pdev)
 {
-	struct cam_hw_info		    *hw = NULL;
-	struct cam_hw_intf		    *hw_intf = NULL;
+	struct cam_hw_info                  *hw = NULL;
+	struct cam_hw_intf                  *hw_intf = NULL;
 	struct cam_custom_sub_mod_core_info *core_info = NULL;
-	int				   rc = 0;
-	struct platform_device *pdev = to_platform_device(dev);
+	int                                rc = 0;
 
 	hw_intf = kzalloc(sizeof(struct cam_hw_intf), GFP_KERNEL);
 	if (!hw_intf)
@@ -60,9 +59,14 @@ static int cam_custom_hw_sub_mod_component_bind(struct device *dev,
 		goto free_hw_intf;
 	}
 
+	memset(cam_custom_hw_sub_mod_name, 0,
+		sizeof(cam_custom_hw_sub_mod_name));
+	snprintf(cam_custom_hw_sub_mod_name, sizeof(cam_custom_hw_sub_mod_name),
+		"custom_hw%1u", hw_intf->hw_idx);
+
 	hw->soc_info.pdev = pdev;
 	hw->soc_info.dev = &pdev->dev;
-	hw->soc_info.dev_name = pdev->name;
+	hw->soc_info.dev_name = cam_custom_hw_sub_mod_name;
 	hw_intf->hw_priv = hw;
 	hw_intf->hw_ops.get_hw_caps = cam_custom_hw_sub_mod_get_hw_caps;
 	hw_intf->hw_ops.init = cam_custom_hw_sub_mod_init_hw;
@@ -110,7 +114,7 @@ static int cam_custom_hw_sub_mod_component_bind(struct device *dev,
 	/* needs to be invoked when custom hw is in place */
 	//cam_custom_hw_sub_mod_init_hw(hw, NULL, 0);
 
-	CAM_DBG(CAM_CUSTOM, "HW idx:%d component bound successfully",
+	CAM_DBG(CAM_CUSTOM, "Custom hw_idx[%d] probe successful",
 		hw_intf->hw_idx);
 	return rc;
 
@@ -120,31 +124,6 @@ free_hw:
 	kfree(hw);
 free_hw_intf:
 	kfree(hw_intf);
-	return rc;
-}
-
-static void cam_custom_hw_sub_mod_component_unbind(
-	struct device *dev, struct device *master_dev, void *data)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-
-	CAM_DBG(CAM_CUSTOM, "Unbinding component: %s", pdev->name);
-}
-
-const static struct component_ops cam_custom_hw_sub_mod_component_ops = {
-	.bind = cam_custom_hw_sub_mod_component_bind,
-	.unbind = cam_custom_hw_sub_mod_component_unbind,
-};
-
-int cam_custom_hw_sub_mod_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	CAM_DBG(CAM_CUSTOM, "Adding Custom HW sub module component");
-	rc = component_add(&pdev->dev, &cam_custom_hw_sub_mod_component_ops);
-	if (rc)
-		CAM_ERR(CAM_CUSTOM, "failed to add component rc: %d", rc);
-
 	return rc;
 }
 
@@ -158,7 +137,7 @@ static const struct of_device_id cam_custom_hw_sub_mod_dt_match[] = {
 
 MODULE_DEVICE_TABLE(of, cam_custom_hw_sub_mod_dt_match);
 
-struct platform_driver cam_custom_hw_sub_mod_driver = {
+static struct platform_driver cam_custom_hw_sub_mod_driver = {
 	.probe = cam_custom_hw_sub_mod_probe,
 	.driver = {
 		.name = CAM_CUSTOM_SUB_MOD_NAME,

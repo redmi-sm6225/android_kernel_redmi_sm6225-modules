@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
  * Copyright (c) 2019, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CUSTOM_HW_MGR_H_
@@ -76,8 +75,6 @@ struct ctx_base_info {
  * @num_base:               number of valid base data in the base array
  * @init_done:              indicate whether init hw is done
  * @event_cb:               event_cb to ctx
- * @scratch_buffer_addr:    scratch buffer address
- * @task_type:              Custom HW task type
  * @cb_priv:                data sent back with event_cb
  *
  */
@@ -99,8 +96,6 @@ struct cam_custom_hw_mgr_ctx {
 	uint32_t                        num_base;
 	bool                            init_done;
 	cam_hw_event_cb_func            event_cb;
-	uint64_t                        scratch_buffer_addr;
-	enum cam_custom_hw_task_type    task_type;
 	void                           *cb_priv;
 };
 
@@ -126,16 +121,6 @@ struct cam_custom_hw_mgr {
 	struct list_head               used_ctx_list;
 	struct cam_custom_hw_mgr_ctx   ctx_pool[CAM_CTX_MAX];
 };
-
-/**
- * cam_custom_get_num_custom()
- *
- * @brief : Populates number of custom.
- *
- * @num_custom : Fills number of custom in the address passed.
- *
- */
-void cam_custom_get_num_custom(uint32_t *num_custom);
 
 /**
  * cam_custom_hw_mgr_init()

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_OPE_CONTEXT_H_
@@ -31,11 +31,9 @@ struct cam_ope_context {
  * @ctx:     Pointer to context
  * @hw_intf: Pointer to OPE hardware interface
  * @ctx_id:  ID for this context
- * @img_iommu_hdl: IOMMU HDL for image buffers
- *
  */
 int cam_ope_context_init(struct cam_ope_context *ctx,
-	struct cam_hw_mgr_intf *hw_intf, uint32_t ctx_id, int img_iommu_hdl);
+	struct cam_hw_mgr_intf *hw_intf, uint32_t ctx_id);
 
 /**
  * cam_ope_context_deinit() - OPE context deinit

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_REQ_MGR_WORKQ_H_
@@ -15,11 +14,7 @@
 #include <linux/slab.h>
 #include <linux/timer.h>
 
-/* Threshold for scheduling delay in ms */
-#define CAM_WORKQ_SCHEDULE_TIME_THRESHOLD   5
-
-/* Threshold for execution delay in ms */
-#define CAM_WORKQ_EXE_TIME_THRESHOLD        10
+#include "cam_req_mgr_core.h"
 
 /* Flag to create a high priority workq */
 #define CAM_WORKQ_FLAG_HIGH_PRIORITY             (1 << 0)
@@ -30,6 +25,13 @@
  * given CPU.
  */
 #define CAM_WORKQ_FLAG_SERIAL                    (1 << 1)
+
+/*
+ * Response time threshold in ms beyond which it is considered
+ * as workq scheduling/processing delay.
+ */
+#define CAM_WORKQ_RESPONSE_TIME_THRESHOLD   5
+
 
 /* Task priorities, lower the number higher the priority*/
 enum crm_task_priority {
@@ -46,48 +48,42 @@ enum crm_workq_context {
 };
 
 /** struct crm_workq_task
- * @priority         : caller can assign priority to task based on type.
- * @payload          : depending of user of task this payload type will change
- * @process_cb       : registered callback called by workq when task enqueued is
- *                     ready for processing in workq thread context
- * @parent           : workq's parent is link which is enqqueing taks to this workq
- * @entry            : list head of this list entry is worker's empty_head
- * @cancel           : if caller has got free task from pool but wants to abort
- *                     or put back without using it
- * @priv             : when task is enqueuer caller can attach priv along which
- *                     it will get in process callback
- * @ret              : return value in future to use for blocking calls
- * @task_scheduled_ts: enqueue time of task
+ * @priority   : caller can assign priority to task based on type.
+ * @payload    : depending of user of task this payload type will change
+ * @process_cb : registered callback called by workq when task enqueued is
+ *               ready for processing in workq thread context
+ * @parent     : workq's parent is link which is enqqueing taks to this workq
+ * @entry      : list head of this list entry is worker's empty_head
+ * @cancel     : if caller has got free task from pool but wants to abort
+ *               or put back without using it
+ * @priv       : when task is enqueuer caller can attach priv along which
+ *               it will get in process callback
+ * @ret        : return value in future to use for blocking calls
  */
 struct crm_workq_task {
 	int32_t                    priority;
-	int32_t                    ret;
 	void                      *payload;
 	int32_t                  (*process_cb)(void *priv, void *data);
 	void                      *parent;
 	struct list_head           entry;
 	uint8_t                    cancel;
 	void                      *priv;
-	ktime_t                    task_scheduled_ts;
+	int32_t                    ret;
 };
 
 /** struct cam_req_mgr_core_workq
- * @work        : work token used by workqueue
- * @job         : workqueue internal job struct
- * @lock_bh     : lock for task structs
- * @in_irq      : set true if workque can be used in irq context
- * @flush       : used to track if flush has been called on workqueue
- * @work_q_name : name of the workq
- * @workq_scheduled_ts: enqueue time of workq
+ * @work              : work token used by workqueue
+ * @job               : workqueue internal job struct
+ * @workq_scheduled_ts: workqueue scheduled timestamp
  * task -
- * @lock        : Current task's lock handle
- * @pending_cnt : # of tasks left in queue
- * @free_cnt    : # of free/available tasks
- * @process_head:
- * @empty_head  : list  head of available taska which can be used
- *                or acquired in order to enqueue a task to workq
- * @pool        : pool of tasks used for handling events in workq context
- * @num_task    : size of tasks pool
+ * @lock_bh           : lock for task structs
+ * @in_irq            : set true if workque can be used in irq context
+ * @free_cnt          : num of free/available tasks
+ * @empty_head        : list  head of available taska which can be used
+ *                      or acquired in order to enqueue a task to workq
+ * @pool              : pool of tasks used for handling events in workq context
+ * @num_task          : size of tasks pool
+ * -
  */
 struct cam_req_mgr_core_workq {
 	struct work_struct         work;
@@ -95,8 +91,6 @@ struct cam_req_mgr_core_workq {
 	spinlock_t                 lock_bh;
 	uint32_t                   in_irq;
 	ktime_t                    workq_scheduled_ts;
-	atomic_t                   flush;
-	char                       workq_name[128];
 
 	/* tasks */
 	struct {
@@ -112,29 +106,6 @@ struct cam_req_mgr_core_workq {
 };
 
 /**
- * struct cam_req_mgr_core_workq_mini_dump
- * @workq_scheduled_ts: scheduled ts
- * task -
- * @pending_cnt : # of tasks left in queue
- * @free_cnt    : # of free/available tasks
- * @num_task    : size of tasks pool
- */
-struct cam_req_mgr_core_workq_mini_dump {
-	ktime_t                    workq_scheduled_ts;
-	/* tasks */
-	struct {
-		uint32_t               pending_cnt;
-		uint32_t               free_cnt;
-		uint32_t               num_task;
-	} task;
-};
-/**
- * cam_req_mgr_process_workq() - main loop handling
- * @w: workqueue task pointer
- */
-void cam_req_mgr_process_workq(struct work_struct *w);
-
-/**
  * cam_req_mgr_workq_create()
  * @brief    : create a workqueue
  * @name     : Name of the workque to be allocated, it is combination
@@ -144,13 +115,12 @@ void cam_req_mgr_process_workq(struct work_struct *w);
  * @in_irq   : Set to one if workq might be used in irq context
  * @flags    : Bitwise OR of Flags for workq behavior.
  *             e.g. CAM_REQ_MGR_WORKQ_HIGH_PRIORITY | CAM_REQ_MGR_WORKQ_SERIAL
- * @func     : function pointer for cam_req_mgr_process_workq wrapper function
  * This function will allocate and create workqueue and pass
  * the workq pointer to caller.
  */
 int cam_req_mgr_workq_create(char *name, int32_t num_tasks,
 	struct cam_req_mgr_core_workq **workq, enum crm_workq_context in_irq,
-	int flags, void (*func)(struct work_struct *w));
+	int flags);
 
 /**
  * cam_req_mgr_workq_destroy()
@@ -173,18 +143,19 @@ int cam_req_mgr_workq_enqueue_task(struct crm_workq_task *task,
 	void *priv, int32_t prio);
 
 /**
+ * cam_req_mgr_thread_switch_delay_detect()
+ * @brief: Detects if workq delay has occurred or not
+ * @timestamp: workq scheduled timestamp
+ */
+void cam_req_mgr_thread_switch_delay_detect(
+	ktime_t timestamp);
+
+/**
  * cam_req_mgr_workq_get_task()
  * @brief: Returns empty task pointer for use
  * @workq: workque used for processing
  */
 struct crm_workq_task *cam_req_mgr_workq_get_task(
 	struct cam_req_mgr_core_workq *workq);
-
-/**
- * cam_req_mgr_workq_flush()
- * @brief: Flushes the work queue. Function will sleep until any active task is complete.
- * @workq: pointer to worker data struct
- */
-void cam_req_mgr_workq_flush(struct cam_req_mgr_core_workq *workq);
 
 #endif

@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "cam_req_mgr_workq.h"
 #include "cam_debug_util.h"
-#include "cam_common_util.h"
 
 #define WORKQ_ACQUIRE_LOCK(workq, flags) {\
 	if ((workq)->in_irq) \
@@ -65,18 +63,6 @@ static void cam_req_mgr_workq_put_task(struct crm_workq_task *task)
 	WORKQ_RELEASE_LOCK(workq, flags);
 }
 
-void cam_req_mgr_workq_flush(struct cam_req_mgr_core_workq *workq)
-{
-	if (!workq) {
-		CAM_ERR(CAM_CRM, "workq is null");
-		return;
-	}
-
-	atomic_set(&workq->flush, 1);
-	cancel_work_sync(&workq->work);
-	atomic_set(&workq->flush, 0);
-}
-
 /**
  * cam_req_mgr_process_task() - Process the enqueued task
  * @task: pointer to task workq thread shall process
@@ -102,14 +88,12 @@ static int cam_req_mgr_process_task(struct crm_workq_task *task)
  * cam_req_mgr_process_workq() - main loop handling
  * @w: workqueue task pointer
  */
-void cam_req_mgr_process_workq(struct work_struct *w)
+static void cam_req_mgr_process_workq(struct work_struct *w)
 {
 	struct cam_req_mgr_core_workq *workq = NULL;
 	struct crm_workq_task         *task;
 	int32_t                        i = CRM_TASK_PRIORITY_0;
 	unsigned long                  flags = 0;
-	ktime_t                        sched_start_time;
-	void                          *cb = NULL;
 
 	if (!w) {
 		CAM_ERR(CAM_CRM, "NULL task pointer can not schedule");
@@ -118,26 +102,16 @@ void cam_req_mgr_process_workq(struct work_struct *w)
 	workq = (struct cam_req_mgr_core_workq *)
 		container_of(w, struct cam_req_mgr_core_workq, work);
 
+	cam_req_mgr_thread_switch_delay_detect(workq->workq_scheduled_ts);
 	while (i < CRM_TASK_PRIORITY_MAX) {
 		WORKQ_ACQUIRE_LOCK(workq, flags);
 		while (!list_empty(&workq->task.process_head[i])) {
 			task = list_first_entry(&workq->task.process_head[i],
 				struct crm_workq_task, entry);
-			cb = (void *)task->process_cb;
-			cam_common_util_thread_switch_delay_detect(
-				workq->workq_name, "schedule", cb,
-				task->task_scheduled_ts,
-				CAM_WORKQ_SCHEDULE_TIME_THRESHOLD);
-			sched_start_time = ktime_get();
 			atomic_sub(1, &workq->task.pending_cnt);
 			list_del_init(&task->entry);
 			WORKQ_RELEASE_LOCK(workq, flags);
-			if (!unlikely(atomic_read(&workq->flush)))
-				cam_req_mgr_process_task(task);
-			cam_common_util_thread_switch_delay_detect(
-				workq->workq_name, "execution", cb,
-				sched_start_time,
-				CAM_WORKQ_SCHEDULE_TIME_THRESHOLD);
+			cam_req_mgr_process_task(task);
 			CAM_DBG(CAM_CRM, "processed task %pK free_cnt %d",
 				task, atomic_read(&workq->task.free_cnt));
 			WORKQ_ACQUIRE_LOCK(workq, flags);
@@ -156,30 +130,33 @@ int cam_req_mgr_workq_enqueue_task(struct crm_workq_task *task,
 
 	if (!task) {
 		CAM_WARN(CAM_CRM, "NULL task pointer can not schedule");
-		return -EINVAL;
+		rc = -EINVAL;
+		goto end;
 	}
 	workq = (struct cam_req_mgr_core_workq *)task->parent;
 	if (!workq) {
-		CAM_WARN_RATE_LIMIT(CAM_CRM, "NULL workq pointer suspect mem corruption");
-		return -EINVAL;
+		CAM_DBG(CAM_CRM, "NULL workq pointer suspect mem corruption");
+		rc = -EINVAL;
+		goto end;
 	}
 
-	if (task->cancel == 1 || atomic_read(&workq->flush)) {
+	if (task->cancel == 1) {
+		cam_req_mgr_workq_put_task(task);
+		CAM_WARN(CAM_CRM, "task aborted and queued back to pool");
 		rc = 0;
-		goto abort;
+		goto end;
 	}
 	task->priv = priv;
 	task->priority =
 		(prio < CRM_TASK_PRIORITY_MAX && prio >= CRM_TASK_PRIORITY_0)
 		? prio : CRM_TASK_PRIORITY_0;
-	task->task_scheduled_ts = ktime_get();
 
 	WORKQ_ACQUIRE_LOCK(workq, flags);
-	if (!workq->job) {
-		rc = -EINVAL;
-		WORKQ_RELEASE_LOCK(workq, flags);
-		goto abort;
-	}
+		if (!workq->job) {
+			rc = -EINVAL;
+			WORKQ_RELEASE_LOCK(workq, flags);
+			goto end;
+		}
 
 	list_add_tail(&task->entry,
 		&workq->task.process_head[task->priority]);
@@ -188,19 +165,16 @@ int cam_req_mgr_workq_enqueue_task(struct crm_workq_task *task,
 	CAM_DBG(CAM_CRM, "enq task %pK pending_cnt %d",
 		task, atomic_read(&workq->task.pending_cnt));
 
+	workq->workq_scheduled_ts = ktime_get();
 	queue_work(workq->job, &workq->work);
 	WORKQ_RELEASE_LOCK(workq, flags);
-
-	return rc;
-abort:
-	cam_req_mgr_workq_put_task(task);
-	CAM_INFO(CAM_CRM, "task aborted and queued back to pool");
+end:
 	return rc;
 }
 
 int cam_req_mgr_workq_create(char *name, int32_t num_tasks,
 	struct cam_req_mgr_core_workq **workq, enum crm_workq_context in_irq,
-	int flags, void (*func)(struct work_struct *w))
+	int flags)
 {
 	int32_t i, wq_flags = 0, max_active_tasks = 0;
 	struct crm_workq_task  *task;
@@ -230,8 +204,7 @@ int cam_req_mgr_workq_create(char *name, int32_t num_tasks,
 		}
 
 		/* Workq attributes initialization */
-		strlcpy(crm_workq->workq_name, buf, sizeof(crm_workq->workq_name));
-		INIT_WORK(&crm_workq->work, func);
+		INIT_WORK(&crm_workq->work, cam_req_mgr_process_workq);
 		spin_lock_init(&crm_workq->lock_bh);
 		CAM_DBG(CAM_CRM, "LOCK_DBG workq %s lock %pK",
 			name, &crm_workq->lock_bh);
@@ -242,7 +215,6 @@ int cam_req_mgr_workq_create(char *name, int32_t num_tasks,
 		for (i = CRM_TASK_PRIORITY_0; i < CRM_TASK_PRIORITY_MAX; i++)
 			INIT_LIST_HEAD(&crm_workq->task.process_head[i]);
 		INIT_LIST_HEAD(&crm_workq->task.empty_head);
-		atomic_set(&crm_workq->flush, 0);
 		crm_workq->in_irq = in_irq;
 		crm_workq->task.num_task = num_tasks;
 		crm_workq->task.pool = kcalloc(crm_workq->task.num_task,
@@ -274,33 +246,46 @@ void cam_req_mgr_workq_destroy(struct cam_req_mgr_core_workq **crm_workq)
 {
 	unsigned long flags = 0;
 	struct workqueue_struct   *job;
-	struct cam_req_mgr_core_workq *workq;
-	int i;
 
-	if (crm_workq && *crm_workq) {
-		workq = *crm_workq;
-		CAM_DBG(CAM_CRM, "destroy workque %s", workq->workq_name);
-		WORKQ_ACQUIRE_LOCK(workq, flags);
-		/* prevent any processing of callbacks */
-		atomic_set(&workq->flush, 1);
-		if (workq->job) {
-			job = workq->job;
-			workq->job = NULL;
-			WORKQ_RELEASE_LOCK(workq, flags);
+	CAM_DBG(CAM_CRM, "destroy workque %pK", crm_workq);
+	if (*crm_workq) {
+		WORKQ_ACQUIRE_LOCK(*crm_workq, flags);
+		if ((*crm_workq)->job) {
+			job = (*crm_workq)->job;
+			(*crm_workq)->job = NULL;
+			WORKQ_RELEASE_LOCK(*crm_workq, flags);
 			destroy_workqueue(job);
-			WORKQ_ACQUIRE_LOCK(workq, flags);
+		} else {
+			WORKQ_RELEASE_LOCK(*crm_workq, flags);
 		}
-		/* Destroy workq payload data */
-		kfree(workq->task.pool[0].payload);
-		workq->task.pool[0].payload = NULL;
-		kfree(workq->task.pool);
 
-		/* Leave lists in stable state after freeing pool */
-		INIT_LIST_HEAD(&workq->task.empty_head);
-		for (i = 0; i < CRM_TASK_PRIORITY_MAX; i++)
-			INIT_LIST_HEAD(&workq->task.process_head[i]);
-		WORKQ_RELEASE_LOCK(workq, flags);
-		kfree(workq);
+		/* Destroy workq payload data */
+		kfree((*crm_workq)->task.pool[0].payload);
+		(*crm_workq)->task.pool[0].payload = NULL;
+		kfree((*crm_workq)->task.pool);
+		kfree(*crm_workq);
 		*crm_workq = NULL;
+	}
+}
+
+void cam_req_mgr_thread_switch_delay_detect(ktime_t workq_scheduled)
+{
+	uint64_t                         diff;
+	ktime_t                          cur_time;
+	struct timespec64                cur_ts;
+	struct timespec64                workq_scheduled_ts;
+
+	cur_time = ktime_get();
+	diff = ktime_ms_delta(cur_time, workq_scheduled);
+	workq_scheduled_ts  = ktime_to_timespec64(workq_scheduled);
+	cur_ts = ktime_to_timespec64(cur_time);
+
+	if (diff > CAM_WORKQ_RESPONSE_TIME_THRESHOLD) {
+		CAM_ERR(CAM_CRM,
+			"Workq delay detected %ld:%06ld %ld:%06ld %ld:",
+			workq_scheduled_ts.tv_sec,
+			workq_scheduled_ts.tv_nsec/NSEC_PER_USEC,
+			cur_ts.tv_sec, cur_ts.tv_nsec/NSEC_PER_USEC,
+			diff);
 	}
 }

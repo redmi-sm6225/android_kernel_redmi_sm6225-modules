@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_VFE175_H_
@@ -29,9 +29,8 @@ static struct cam_irq_register_set vfe175_top_irq_reg_set[2] = {
 static struct cam_irq_controller_reg_info vfe175_top_irq_reg_info = {
 	.num_registers = 2,
 	.irq_reg_set = vfe175_top_irq_reg_set,
-	.global_irq_cmd_offset = 0x00000058,
-	.global_clear_bitmask  = 0x00000001,
-	.clear_all_bitmask     = 0xFFFFFFFF,
+	.global_clear_offset  = 0x00000058,
+	.global_clear_bitmask = 0x00000001,
 };
 
 static struct cam_vfe_camif_ver2_reg vfe175_camif_reg = {
@@ -105,25 +104,25 @@ static struct cam_vfe_camif_lite_ver2_reg_data vfe175_camif_lite_reg_data = {
 	.dual_pd_path_sel_shift          = 24,
 };
 
-static struct cam_vfe_top_ver2_reg_offset_module_ctrl lens_175_reg = {
+struct cam_vfe_top_ver2_reg_offset_module_ctrl lens_175_reg = {
 	.reset    = 0x0000001C,
 	.cgc_ovd  = 0x0000002C,
 	.enable   = 0x00000040,
 };
 
-static struct cam_vfe_top_ver2_reg_offset_module_ctrl stats_175_reg = {
+struct cam_vfe_top_ver2_reg_offset_module_ctrl stats_175_reg = {
 	.reset    = 0x00000020,
 	.cgc_ovd  = 0x00000030,
 	.enable   = 0x00000044,
 };
 
-static struct cam_vfe_top_ver2_reg_offset_module_ctrl color_175_reg = {
+struct cam_vfe_top_ver2_reg_offset_module_ctrl color_175_reg = {
 	.reset    = 0x00000024,
 	.cgc_ovd  = 0x00000034,
 	.enable   = 0x00000048,
 };
 
-static struct cam_vfe_top_ver2_reg_offset_module_ctrl zoom_175_reg = {
+struct cam_vfe_top_ver2_reg_offset_module_ctrl zoom_175_reg = {
 	.reset    = 0x00000028,
 	.cgc_ovd  = 0x00000038,
 	.enable   = 0x0000004C,
@@ -268,7 +267,6 @@ static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
 	.mode_cfg_0       = 0x00002544,
 	.mode_cfg_1       = 0x000025A4,
 	.bw_limit         = 0x000025A0,
-	.ubwc_comp_en_bit = BIT(1),
 };
 
 static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
@@ -282,7 +280,6 @@ static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
 	.mode_cfg_0       = 0x00002644,
 	.mode_cfg_1       = 0x000026A4,
 	.bw_limit         = 0x000026A0,
-	.ubwc_comp_en_bit = BIT(1),
 };
 
 static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
@@ -296,7 +293,6 @@ static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
 	.mode_cfg_0       = 0x00003644,
 	.mode_cfg_1       = 0x000036A4,
 	.bw_limit         = 0x000036A0,
-	.ubwc_comp_en_bit = BIT(1),
 };
 
 static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
@@ -310,7 +306,6 @@ static struct cam_vfe_bus_ver2_reg_offset_ubwc_3_client
 	.mode_cfg_0       = 0x00003744,
 	.mode_cfg_1       = 0x000037A4,
 	.bw_limit         = 0x000037A0,
-	.ubwc_comp_en_bit = BIT(1),
 };
 
 static struct cam_vfe_bus_ver2_hw_info vfe175_bus_hw_info = {
@@ -322,11 +317,10 @@ static struct cam_vfe_bus_ver2_hw_info vfe175_bus_hw_info = {
 		.pwr_iso_cfg                  = 0x000020CC,
 		.dual_master_comp_cfg         = 0x00002028,
 		.irq_reg_info = {
-			.num_registers         = 3,
-			.irq_reg_set           = vfe175_bus_irq_reg,
-			.global_irq_cmd_offset = 0x00002068,
-			.global_clear_bitmask  = 0x00000001,
-			.clear_all_bitmask     = 0xFFFFFFFF,
+			.num_registers        = 3,
+			.irq_reg_set          = vfe175_bus_irq_reg,
+			.global_clear_offset  = 0x00002068,
+			.global_clear_bitmask = 0x00000001,
 		},
 		.comp_error_status            = 0x0000206C,
 		.comp_ovrwr_status            = 0x00002070,
@@ -337,7 +331,6 @@ static struct cam_vfe_bus_ver2_hw_info vfe175_bus_hw_info = {
 		.addr_sync_no_sync            = 0x00002084,
 		.debug_status_cfg             = 0x0000226C,
 		.debug_status_0               = 0x00002270,
-		.top_irq_mask_0               = 0x0000005C,
 	},
 	.num_client = 24,
 	.bus_client_reg = {
@@ -1026,19 +1019,10 @@ static struct cam_vfe_bus_ver2_hw_info vfe175_bus_hw_info = {
 			.max_height    = 1080,
 		},
 	},
-	.top_irq_shift = 9,
-	.support_consumed_addr = false,
-	.max_out_res = CAM_ISP_IFE_OUT_RES_BASE + 23,
 };
 
-static struct cam_vfe_irq_hw_info vfe175_irq_hw_info = {
-	.reset_mask    = BIT(31),
-	.supported_irq = CAM_VFE_HW_IRQ_CAP_INT_CSID,
-	.top_irq_reg   = &vfe175_top_irq_reg_info,
-};
-
-static struct cam_vfe_hw_info cam_vfe175_hw_info = {
-	.irq_hw_info                  = &vfe175_irq_hw_info,
+struct cam_vfe_hw_info cam_vfe175_hw_info = {
+	.irq_reg_info                  = &vfe175_top_irq_reg_info,
 
 	.bus_version                   = CAM_VFE_BUS_VER_2_0,
 	.bus_hw_info                   = &vfe175_bus_hw_info,

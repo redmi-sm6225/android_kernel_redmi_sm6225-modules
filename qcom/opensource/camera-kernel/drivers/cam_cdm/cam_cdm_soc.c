@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -78,63 +78,43 @@ permission_error:
 }
 
 int cam_cdm_soc_load_dt_private(struct platform_device *pdev,
-	struct cam_cdm_private_dt_data *cdm_pvt_data)
+	struct cam_cdm_private_dt_data *ptr)
 {
-	int i, rc = -EINVAL, num_fifo_entries = 0, num_clients = 0;
+	int i, rc = -EINVAL, num_fifo_entries = 0;
 
-	num_clients = of_property_count_strings(
-			pdev->dev.of_node, "cdm-client-names");
-	if ((num_clients <= 0) ||
-		(num_clients > CAM_PER_CDM_MAX_REGISTERED_CLIENTS)) {
+	ptr->dt_num_supported_clients = of_property_count_strings(
+						pdev->dev.of_node,
+						"cdm-client-names");
+	CAM_DBG(CAM_CDM, "Num supported cdm_client = %d",
+		ptr->dt_num_supported_clients);
+	if (ptr->dt_num_supported_clients >
+		CAM_PER_CDM_MAX_REGISTERED_CLIENTS) {
 		CAM_ERR(CAM_CDM, "Invalid count of client names count=%d",
-			num_clients);
-
+			ptr->dt_num_supported_clients);
 		rc = -EINVAL;
 		goto end;
 	}
-
-	cdm_pvt_data->dt_num_supported_clients = (uint32_t)num_clients;
-	CAM_DBG(CAM_CDM, "Num supported cdm_client = %u",
-		cdm_pvt_data->dt_num_supported_clients);
-
-	cdm_pvt_data->dt_cdm_shared = true;
-
-	for (i = 0; i < cdm_pvt_data->dt_num_supported_clients; i++) {
+	if (ptr->dt_num_supported_clients < 0) {
+		CAM_DBG(CAM_CDM, "No cdm client names found");
+		ptr->dt_num_supported_clients = 0;
+		ptr->dt_cdm_shared = false;
+	} else {
+		ptr->dt_cdm_shared = true;
+	}
+	for (i = 0; i < ptr->dt_num_supported_clients; i++) {
 		rc = of_property_read_string_index(pdev->dev.of_node,
-			"cdm-client-names", i,
-			&(cdm_pvt_data->dt_cdm_client_name[i]));
-		CAM_DBG(CAM_CDM, "cdm-client-names[%d] = %s", i,
-			cdm_pvt_data->dt_cdm_client_name[i]);
+			"cdm-client-names", i, &(ptr->dt_cdm_client_name[i]));
+		CAM_DBG(CAM_CDM, "cdm-client-names[%d] = %s",	i,
+			ptr->dt_cdm_client_name[i]);
 		if (rc < 0) {
-			CAM_ERR(CAM_CDM,
-				"Reading cdm-client-names failed for client: %d",
-				i);
+			CAM_ERR(CAM_CDM, "Reading cdm-client-names failed");
 			goto end;
 		}
-
 	}
 
-	cdm_pvt_data->is_single_ctx_cdm =
-		of_property_read_bool(pdev->dev.of_node, "single-context-cdm");
-
-	rc = of_property_read_u32(pdev->dev.of_node, "cam_hw_pid", &cdm_pvt_data->pid);
-	if (rc)
-		cdm_pvt_data->pid = -1;
-
-	rc = of_property_read_u32(pdev->dev.of_node, "cam-hw-mid", &cdm_pvt_data->mid);
-	if (rc)
-		cdm_pvt_data->mid = -1;
-
-	rc = of_property_read_u8(pdev->dev.of_node, "cdm-priority-group",
-			&cdm_pvt_data->priority_group);
-	if (rc < 0) {
-		cdm_pvt_data->priority_group = 0;
-		rc = 0;
-	}
-
-	cdm_pvt_data->config_fifo = of_property_read_bool(pdev->dev.of_node,
+	ptr->config_fifo = of_property_read_bool(pdev->dev.of_node,
 		"config-fifo");
-	if (cdm_pvt_data->config_fifo) {
+	if (ptr->config_fifo) {
 		num_fifo_entries = of_property_count_u32_elems(
 			pdev->dev.of_node,
 			"fifo-depths");
@@ -147,7 +127,7 @@ int cam_cdm_soc_load_dt_private(struct platform_device *pdev,
 		}
 		for (i = 0; i < num_fifo_entries; i++) {
 			rc = of_property_read_u32_index(pdev->dev.of_node,
-				"fifo-depths", i, &cdm_pvt_data->fifo_depth[i]);
+				"fifo-depths", i, &ptr->fifo_depth[i]);
 			if (rc < 0) {
 				CAM_ERR(CAM_CDM,
 					"Unable to read fifo-depth rc %d",
@@ -155,14 +135,13 @@ int cam_cdm_soc_load_dt_private(struct platform_device *pdev,
 				goto end;
 			}
 			CAM_DBG(CAM_CDM, "FIFO%d depth is %d",
-				i, cdm_pvt_data->fifo_depth[i]);
+				i, ptr->fifo_depth[i]);
 		}
 	} else {
 		for (i = 0; i < CAM_CDM_BL_FIFO_MAX; i++) {
-			cdm_pvt_data->fifo_depth[i] =
-				CAM_CDM_BL_FIFO_LENGTH_MAX_DEFAULT;
+			ptr->fifo_depth[i] = CAM_CDM_BL_FIFO_LENGTH_MAX_DEFAULT;
 			CAM_DBG(CAM_CDM, "FIFO%d depth is %d",
-				i, cdm_pvt_data->fifo_depth[i]);
+				i, ptr->fifo_depth[i]);
 		}
 	}
 end:
@@ -175,13 +154,12 @@ int cam_hw_cdm_soc_get_dt_properties(struct cam_hw_info *cdm_hw,
 	int rc;
 	struct cam_hw_soc_info *soc_ptr;
 	const struct of_device_id *id;
-	struct cam_cdm *cdm_core = NULL;
+	struct cam_cdm *cdm_core = cdm_hw->core_info;
 
 	if (!cdm_hw  || (cdm_hw->soc_info.soc_private)
 		|| !(cdm_hw->soc_info.pdev))
 		return -EINVAL;
 
-	cdm_core = cdm_hw->core_info;
 	soc_ptr = &cdm_hw->soc_info;
 
 	rc = cam_soc_util_get_dt_properties(soc_ptr);
@@ -213,7 +191,7 @@ int cam_hw_cdm_soc_get_dt_properties(struct cam_hw_info *cdm_hw,
 
 	CAM_DBG(CAM_CDM, "name %s", cdm_core->name);
 
-	snprintf(cdm_core->name, sizeof(cdm_core->name), "%s%d",
+	snprintf(cdm_core->name, sizeof(cdm_core->name) + 1, "%s%d",
 		id->compatible, soc_ptr->index);
 
 	CAM_DBG(CAM_CDM, "name %s", cdm_core->name);
