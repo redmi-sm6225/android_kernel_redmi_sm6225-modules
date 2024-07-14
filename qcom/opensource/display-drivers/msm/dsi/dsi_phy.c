@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of_device.h>
@@ -311,7 +311,7 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 	rc = dsi_phy_parse_dt_per_lane_cfgs(pdev, lane,
 					    "qcom,platform-lane-config");
 	if (rc) {
-		DSI_PHY_ERR(phy, "failed to parse platform lane config, rc=%d\n", rc);
+		DSI_PHY_ERR(phy, "failed to parse lane cfgs, rc=%d\n", rc);
 		goto err;
 	}
 
@@ -319,7 +319,7 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 	rc = dsi_phy_parse_dt_per_lane_cfgs(pdev, strength,
 					    "qcom,platform-strength-ctrl");
 	if (rc) {
-		DSI_PHY_ERR(phy, "failed to parse platform strength ctrl, rc=%d\n", rc);
+		DSI_PHY_ERR(phy, "failed to parse lane cfgs, rc=%d\n", rc);
 		goto err;
 	}
 
@@ -328,7 +328,7 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 		rc = dsi_phy_parse_dt_per_lane_cfgs(pdev, regs,
 					    "qcom,platform-regulator-settings");
 		if (rc) {
-			DSI_PHY_ERR(phy, "failed to parse platform regulator settings, rc=%d\n",
+			DSI_PHY_ERR(phy, "failed to parse lane cfgs, rc=%d\n",
 					rc);
 			goto err;
 		}
@@ -339,6 +339,9 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 
 	phy->allow_phy_power_off = of_property_read_bool(pdev->dev.of_node,
 			"qcom,panel-allow-phy-poweroff");
+
+	phy->hw.clamp_enable = of_property_read_bool(pdev->dev.of_node,
+			"qcom,phy-clamp-enable");
 
 	of_property_read_u32(pdev->dev.of_node,
 			"qcom,dsi-phy-regulator-min-datarate-bps",
@@ -796,7 +799,7 @@ static inline int dsi_phy_get_data_lanes_count(struct msm_dsi_phy *phy)
 	int num_of_lanes = 0;
 	enum dsi_data_lanes dlanes;
 
-	dlanes = phy->cfg.data_lanes;
+	dlanes = phy->data_lanes;
 
 	/**
 	  * For split link use case effective data lines need to be used
@@ -1021,8 +1024,8 @@ int dsi_phy_enable(struct msm_dsi_phy *phy,
 
 	memcpy(&phy->mode, &config->video_timing, sizeof(phy->mode));
 	memcpy(&phy->cfg.lane_map, &config->lane_map, sizeof(config->lane_map));
+	phy->data_lanes = config->common_config.data_lanes;
 	phy->dst_format = config->common_config.dst_format;
-	phy->cfg.data_lanes = config->common_config.data_lanes;
 	phy->cfg.pll_source = pll_source;
 	phy->cfg.bit_clk_rate_hz = config->bit_clk_rate_hz;
 
@@ -1167,8 +1170,11 @@ int dsi_phy_idle_ctrl(struct msm_dsi_phy *phy, bool enable)
 	} else {
 		phy->dsi_phy_state = DSI_PHY_ENGINE_OFF;
 
+		if (phy->hw.ops.disable)
+			phy->hw.ops.disable(&phy->hw, &phy->cfg);
+
 		if (phy->hw.ops.phy_idle_off)
-			phy->hw.ops.phy_idle_off(&phy->hw, &phy->cfg);
+			phy->hw.ops.phy_idle_off(&phy->hw);
 	}
 	mutex_unlock(&phy->phy_lock);
 

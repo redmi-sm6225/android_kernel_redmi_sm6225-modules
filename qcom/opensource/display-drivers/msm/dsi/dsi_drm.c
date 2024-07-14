@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -181,6 +181,7 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 {
 	int rc = 0;
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
+	c_bridge->display->panel->panel_status = true;
 
 	if (!bridge) {
 		DSI_ERR("Invalid params\n");
@@ -192,8 +193,7 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
-	if (bridge->encoder->crtc->state->active_changed)
-		atomic_set(&c_bridge->display->panel->esd_recovery_pending, 0);
+	atomic_set(&c_bridge->display->panel->esd_recovery_pending, 0);
 
 	/* By this point mode should have been validated through mode_fixup */
 	rc = dsi_display_set_mode(c_bridge->display,
@@ -254,6 +254,7 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 		return;
 	}
 	display = c_bridge->display;
+	display->panel->panel_status = true;
 
 	rc = dsi_display_post_enable(display);
 	if (rc)
@@ -285,6 +286,7 @@ static void dsi_bridge_disable(struct drm_bridge *bridge)
 		return;
 	}
 	display = c_bridge->display;
+	display->panel->panel_status = false;
 
 	if (display)
 		display->enabled = false;
@@ -321,6 +323,8 @@ static void dsi_bridge_post_disable(struct drm_bridge *bridge)
 	}
 
 	display = c_bridge->display;
+
+	display->panel->panel_status = false;
 
 	SDE_ATRACE_BEGIN("dsi_bridge_post_disable");
 	SDE_ATRACE_BEGIN("dsi_display_disable");
@@ -447,14 +451,6 @@ static bool _dsi_bridge_mode_validate_and_fixup(struct drm_bridge *bridge,
 			adj_mode->timing.refresh_rate,
 			adj_mode->pixel_clk_khz,
 			adj_mode->panel_mode_caps);
-	}
-
-	if (!dsi_display_mode_match(&cur_dsi_mode, adj_mode,
-			DSI_MODE_MATCH_ACTIVE_TIMINGS) &&
-			(adj_mode->dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK)) {
-		adj_mode->dsi_mode_flags &= ~DSI_MODE_FLAG_DYN_CLK;
-		DSI_ERR("DMS and dyn clk not supported in same commit\n");
-		return false;
 	}
 
 	return rc;
@@ -692,7 +688,7 @@ int dsi_conn_get_mode_info(struct drm_connector *connector,
 	if (mode_info->comp_info.comp_type) {
 		tar_bpp = dsi_mode->priv_info->pclk_scale.numer;
 		src_bpp = dsi_mode->priv_info->pclk_scale.denom;
-		mode_info->comp_info.comp_ratio = mult_frac(100, src_bpp,
+		mode_info->comp_info.comp_ratio = mult_frac(1, src_bpp,
 				tar_bpp);
 		mode_info->wide_bus_en = dsi_mode->priv_info->widebus_support;
 	}

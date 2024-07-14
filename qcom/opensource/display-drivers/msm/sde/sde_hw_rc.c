@@ -69,9 +69,7 @@ static struct sde_hw_rc_state rc_state[RC_MAX - RC_0] = {
 		.roi_programmed = false,
 	},
 };
-
-#define RC_IDX(hw_dspp) hw_dspp->cap->sblk->rc.idx
-#define RC_STATE(hw_dspp) rc_state[RC_IDX(hw_dspp)]
+#define RC_STATE(hw_dspp) rc_state[hw_dspp->cap->sblk->rc.idx]
 
 enum rc_param_r {
 	RC_PARAM_R0     = 0x0,
@@ -255,7 +253,7 @@ static inline void _sde_hw_rc_reg_write(
 	u32 address = hw_dspp->cap->sblk->rc.base + offset;
 
 	SDE_DEBUG("rc:%u, address:0x%08X, value:0x%08X\n",
-			RC_IDX(hw_dspp),
+			hw_dspp->cap->sblk->rc.idx,
 			hw_dspp->hw.blk_off + address, value);
 	SDE_REG_WRITE(&hw_dspp->hw, address, value);
 }
@@ -333,15 +331,14 @@ static int _sde_hw_rc_get_ajusted_roi(
 	if (pu_roi->w == 0 && pu_roi->h == 0) {
 		rc_roi->x = pu_roi->x;
 		rc_roi->y = pu_roi->y;
-		rc_roi->w = hw_cfg->panel_width;
-		rc_roi->h = hw_cfg->panel_height;
+		rc_roi->w = hw_cfg->displayh;
+		rc_roi->h = hw_cfg->displayv;
 	} else {
 		memcpy(rc_roi, pu_roi, sizeof(struct sde_rect));
 	}
 
-	SDE_EVT32(hw_cfg->displayh, hw_cfg->displayv, hw_cfg->panel_width, hw_cfg->panel_height);
-	SDE_DEBUG("displayh:%u, displayv:%u, panel_w:%u, panel_h:%u\n", hw_cfg->displayh,
-			hw_cfg->displayv, hw_cfg->panel_width, hw_cfg->panel_height);
+	SDE_DEBUG("displayh:%u, displayv:%u\n", hw_cfg->displayh,
+			hw_cfg->displayv);
 	SDE_DEBUG("pu_roi x:%u, y:%u, w:%u, h:%u\n", pu_roi->x, pu_roi->y,
 			pu_roi->w, pu_roi->h);
 	SDE_DEBUG("rc_roi x:%u, y:%u, w:%u, h:%u\n", rc_roi->x, rc_roi->y,
@@ -433,7 +430,7 @@ static int _sde_hw_rc_program_enable_bits(
 {
 	int rc = 0;
 	u32 val = 0, param_c = 0, rc_merge_mode = 0, ystart = 0;
-	u64 flags = 0, mask_w = 0, mask_h = 0;
+	u64 flags = 0;
 	bool r1_valid = false, r2_valid = false;
 	bool pu_in_r1 = false, pu_in_r2 = false;
 	bool r1_enable = false, r2_enable = false;
@@ -451,8 +448,6 @@ static int _sde_hw_rc_program_enable_bits(
 	}
 
 	flags = rc_mask_cfg->flags;
-	mask_w = rc_mask_cfg->width;
-	mask_h = rc_mask_cfg->height;
 	r1_valid = ((flags & SDE_HW_RC_DISABLE_R1) != SDE_HW_RC_DISABLE_R1);
 	r2_valid = ((flags & SDE_HW_RC_DISABLE_R2) != SDE_HW_RC_DISABLE_R2);
 	pu_in_r1 = (param_r == RC_PARAM_R1 || param_r == RC_PARAM_R1R2);
@@ -470,11 +465,9 @@ static int _sde_hw_rc_program_enable_bits(
 	if (!r1_enable && r2_enable)
 		ystart = rc_roi->y;
 
-	SDE_DEBUG("idx:%d w:%d h:%d flags:%x, R1:%d, R2:%d, PU R1:%d, PU R2:%d, Y_START:%d\n",
-			RC_IDX(hw_dspp), mask_w, mask_h, flags, r1_valid, r2_valid, pu_in_r1,
-			pu_in_r2, ystart);
-	SDE_EVT32(RC_IDX(hw_dspp), mask_w, mask_h, flags, r1_valid, r2_valid, pu_in_r1, pu_in_r2,
-			ystart);
+	SDE_DEBUG("flags:%x, R1 valid:%d, R2 valid:%d, PU in R1:%d, PU in R2:%d, Y_START:%d\n",
+			flags, r1_valid, r2_valid, pu_in_r1, pu_in_r2, ystart);
+	SDE_EVT32(flags, r1_valid, r2_valid, pu_in_r1, pu_in_r2, ystart);
 
 	val |= param_c;
 	_sde_hw_rc_reg_write(hw_dspp, SDE_HW_RC_REG1, val);
@@ -584,13 +577,12 @@ static int sde_hw_rc_check_mask_cfg(
 {
 	int rc = 0;
 	u32 i = 0;
-	u32 panel_width, panel_height, half_panel_width;
+	u32 half_panel_width;
 	u32 mem_total_size, min_region_width;
 	u64 flags;
 	u32 cfg_param_01, cfg_param_02, cfg_param_03;
 	u32 cfg_param_07, cfg_param_08;
 	u32 *cfg_param_04, *cfg_param_05, *cfg_param_06;
-	u32 mask_width, mask_height;
 	bool r1_enable, r2_enable;
 
 	if (!hw_dspp || !hw_cfg || !rc_mask_cfg) {
@@ -598,6 +590,13 @@ static int sde_hw_rc_check_mask_cfg(
 		return -EINVAL;
 	}
 
+	if (hw_cfg->panel_height != rc_mask_cfg->height ||
+		rc_mask_cfg->width != hw_cfg->panel_width) {
+		SDE_ERROR("RC mask Layer: h %d w %d panel: h %d w %d mismatch\n",
+				rc_mask_cfg->height, rc_mask_cfg->width,
+				hw_cfg->panel_height, hw_cfg->panel_width);
+		return -EINVAL;
+	}
 	flags = rc_mask_cfg->flags;
 	cfg_param_01 = rc_mask_cfg->cfg_param_01;
 	cfg_param_02 = rc_mask_cfg->cfg_param_02;
@@ -607,28 +606,11 @@ static int sde_hw_rc_check_mask_cfg(
 	cfg_param_06 = rc_mask_cfg->cfg_param_06;
 	cfg_param_07 = rc_mask_cfg->cfg_param_07;
 	cfg_param_08 = rc_mask_cfg->cfg_param_08;
-	mask_width = rc_mask_cfg->width;
-	mask_height = rc_mask_cfg->height;
 	r1_enable = ((flags & SDE_HW_RC_DISABLE_R1) != SDE_HW_RC_DISABLE_R1);
 	r2_enable = ((flags & SDE_HW_RC_DISABLE_R2) != SDE_HW_RC_DISABLE_R2);
 
 	mem_total_size = hw_dspp->cap->sblk->rc.mem_total_size;
 	min_region_width = hw_dspp->cap->sblk->rc.min_region_width;
-	panel_width =  hw_cfg->panel_width;
-	panel_height = hw_cfg->panel_height;
-	half_panel_width = panel_width / cfg_param_03 * 2;
-
-	SDE_EVT32(RC_IDX(hw_dspp), mask_width, mask_height, panel_width, panel_height,
-			half_panel_width);
-	SDE_EVT32(RC_IDX(hw_dspp), flags, cfg_param_01, cfg_param_02, cfg_param_03, cfg_param_04,
-			cfg_param_05, cfg_param_06, cfg_param_07, cfg_param_08);
-	SDE_EVT32(RC_IDX(hw_dspp), r1_enable, r2_enable, mem_total_size, min_region_width);
-
-	if (mask_width != panel_width || mask_height != panel_height) {
-		SDE_ERROR("RC mask Layer: w %d h %d panel: w %d h %d mismatch\n",
-				mask_width, mask_height, panel_width, panel_height);
-		return -EINVAL;
-	}
 
 	if (cfg_param_07 > mem_total_size) {
 		SDE_ERROR("invalid cfg_param_07:%d\n", cfg_param_07);
@@ -659,6 +641,7 @@ static int sde_hw_rc_check_mask_cfg(
 		}
 	}
 
+	half_panel_width = hw_cfg->panel_width / cfg_param_03 * 2;
 	for (i = 0; i < cfg_param_03; i += 2) {
 		if (cfg_param_04[i] + cfg_param_04[i+1] != half_panel_width) {
 			SDE_ERROR("invalid ratio [%d]:%d, [%d]:%d, %d\n",
@@ -750,7 +733,6 @@ int sde_hw_rc_check_mask(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	if ((hw_cfg->len == 0 && hw_cfg->payload == NULL)) {
 		SDE_DEBUG("RC feature disabled, skip mask checks\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return 0;
 	}
 
@@ -804,7 +786,6 @@ int sde_hw_rc_check_pu_roi(struct sde_hw_dspp *hw_dspp, void *cfg)
 		SDE_DEBUG("full frame update\n");
 		memset(&empty_roi_list, 0, sizeof(struct msm_roi_list));
 		roi_list = &empty_roi_list;
-		SDE_EVT32(RC_IDX(hw_dspp));
 	}
 
 	rc_mask_cfg = RC_STATE(hw_dspp).last_rc_mask_cfg;
@@ -813,7 +794,6 @@ int sde_hw_rc_check_pu_roi(struct sde_hw_dspp *hw_dspp, void *cfg)
 	/* early return when there is no mask in memory */
 	if (!mask_programmed || !rc_mask_cfg) {
 		SDE_DEBUG("no previous rc mask programmed\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return SDE_HW_RC_PU_SKIP_OP;
 	}
 
@@ -873,12 +853,10 @@ int sde_hw_rc_setup_pu_roi(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	rc_mask_cfg = RC_STATE(hw_dspp).last_rc_mask_cfg;
 	mask_programmed = RC_STATE(hw_dspp).mask_programmed;
-	SDE_EVT32(RC_IDX(hw_dspp), roi_list, rc_mask_cfg, mask_programmed);
 
 	/* early return when there is no mask in memory */
 	if (!mask_programmed || !rc_mask_cfg) {
 		SDE_DEBUG("no previous rc mask programmed\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return SDE_HW_RC_PU_SKIP_OP;
 	}
 
@@ -926,7 +904,6 @@ int sde_hw_rc_setup_mask(struct sde_hw_dspp *hw_dspp, void *cfg)
 	struct msm_roi_list *last_roi_list;
 	u32 merge_mode = 0;
 	bool roi_programmed = false;
-	u64 mask_w = 0, mask_h = 0, panel_w = 0, panel_h = 0;
 
 	if (!hw_dspp || !hw_cfg) {
 		SDE_ERROR("invalid arguments\n");
@@ -943,9 +920,7 @@ int sde_hw_rc_setup_mask(struct sde_hw_dspp *hw_dspp, void *cfg)
 		memset(RC_STATE(hw_dspp).last_roi_list, 0,
 				sizeof(struct msm_roi_list));
 		RC_STATE(hw_dspp).roi_programmed = false;
-		SDE_EVT32(RC_IDX(hw_dspp), RC_STATE(hw_dspp).last_rc_mask_cfg,
-				RC_STATE(hw_dspp).mask_programmed,
-				RC_STATE(hw_dspp).roi_programmed);
+
 		return 0;
 	}
 
@@ -959,19 +934,6 @@ int sde_hw_rc_setup_mask(struct sde_hw_dspp *hw_dspp, void *cfg)
 	last_roi_list = RC_STATE(hw_dspp).last_roi_list;
 	roi_programmed = RC_STATE(hw_dspp).roi_programmed;
 
-	mask_w = rc_mask_cfg->width;
-	mask_h = rc_mask_cfg->height;
-	panel_w =  hw_cfg->panel_width;
-	panel_h = hw_cfg->panel_height;
-
-	if ((panel_w != mask_w || panel_h != mask_h)) {
-		SDE_ERROR("RC-%d mask: w %d h %d panel: w %d h %d mismatch\n",
-				RC_IDX(hw_dspp), mask_w, mask_h, panel_w, panel_h);
-		SDE_EVT32(1);
-		_sde_hw_rc_reg_write(hw_dspp, SDE_HW_RC_REG1, 0);
-		return -EINVAL;
-	}
-
 	if (!roi_programmed) {
 		SDE_DEBUG("full frame update\n");
 		memset(&merged_roi, 0, sizeof(struct sde_rect));
@@ -979,7 +941,6 @@ int sde_hw_rc_setup_mask(struct sde_hw_dspp *hw_dspp, void *cfg)
 		SDE_DEBUG("partial frame update\n");
 		sde_kms_rect_merge_rectangles(last_roi_list, &merged_roi);
 	}
-	SDE_EVT32(RC_IDX(hw_dspp), roi_programmed);
 
 	rc = _sde_hw_rc_get_ajusted_roi(hw_cfg, &merged_roi, &rc_roi);
 	if (rc) {
@@ -1026,7 +987,6 @@ int sde_hw_rc_setup_data_dma(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	if ((hw_cfg->len == 0 && hw_cfg->payload == NULL)) {
 		SDE_DEBUG("RC feature disabled, skip data programming\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return 0;
 	}
 
@@ -1040,7 +1000,6 @@ int sde_hw_rc_setup_data_dma(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	if (rc_mask_cfg->flags & SDE_HW_RC_SKIP_DATA_PROG) {
 		SDE_DEBUG("skip data programming\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return 0;
 	}
 
@@ -1067,7 +1026,6 @@ int sde_hw_rc_setup_data_ahb(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	if ((hw_cfg->len == 0 && hw_cfg->payload == NULL)) {
 		SDE_DEBUG("rc feature disabled, skip data programming\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return 0;
 	}
 
@@ -1081,7 +1039,6 @@ int sde_hw_rc_setup_data_ahb(struct sde_hw_dspp *hw_dspp, void *cfg)
 
 	if (rc_mask_cfg->flags & SDE_HW_RC_SKIP_DATA_PROG) {
 		SDE_DEBUG("skip data programming\n");
-		SDE_EVT32(RC_IDX(hw_dspp));
 		return 0;
 	}
 

@@ -15,6 +15,7 @@
 #include "msm_prop.h"
 #include "sde_kms.h"
 #include "sde_fence.h"
+#include "mi_sde_connector.h"
 
 #define SDE_CONNECTOR_NAME_SIZE	16
 #define SDE_CONNECTOR_DHDR_MEMPOOL_MAX_SIZE	SZ_32
@@ -531,6 +532,7 @@ struct sde_misr_sign {
  * @expected_panel_mode: expected panel mode by usespace
  * @panel_dead: Flag to indicate if panel has gone bad
  * @esd_status_check: Flag to indicate if ESD thread is scheduled or not
+ * @twm_en: Flag to indicate if TWM mode is enabled or not.
  * @bl_scale_dirty: Flag to indicate PP BL scale value(s) is changed
  * @bl_scale: BL scale value for ABA feature
  * @bl_scale_sv: BL scale value for sunlight visibility feature
@@ -542,7 +544,6 @@ struct sde_misr_sign {
  * @hdr_min_luminance: desired min luminance obtained from HDR block
  * @hdr_supported: does the sink support HDR content
  * @color_enc_fmt: Colorimetry encoding formats of sink
- * @lm_mask: preferred LM mask for connector
  * @allow_bl_update: Flag to indicate if BL update is allowed currently or not
  * @dimming_bl_notify_enabled: Flag to indicate if dimming bl notify is enabled or not
  * @qsync_mode: Cached Qsync mode, 0=disabled, 1=continuous mode
@@ -579,6 +580,7 @@ struct sde_connector {
 	int dpms_mode;
 	int lp_mode;
 	int last_panel_power_mode;
+	struct device *sysfs_dev;
 
 	struct msm_property_info property_info;
 	struct msm_property_data property_data[CONNECTOR_PROP_COUNT];
@@ -600,6 +602,7 @@ struct sde_connector {
 	u32 esd_status_interval;
 	bool panel_dead;
 	bool esd_status_check;
+	bool twm_en;
 	enum panel_op_mode expected_panel_mode;
 
 	bool bl_scale_dirty;
@@ -617,7 +620,6 @@ struct sde_connector {
 	bool hdr_supported;
 
 	u32 color_enc_fmt;
-	u32 lm_mask;
 
 	u8 hdr_plus_app_ver;
 	u32 qsync_mode;
@@ -637,6 +639,11 @@ struct sde_connector {
 	struct sde_misr_sign previous_misr_sign;
 
 	bool hwfence_wb_retire_fences_enable;
+/* LQ.LCM - 2023.2.7- transplant mi disp from zeus start */
+	struct mi_sde_cdev *mi_cdev;
+	struct mi_layer_flags mi_layer_flags;
+	u32 qsync_min_fps_index;
+/* LQ.LCM - 2023.2.7 - end modify */
 };
 
 /**
@@ -916,6 +923,16 @@ static inline void sde_connector_get_dnsc_blur_io_res(struct drm_connector_state
 int sde_connector_set_property_for_commit(struct drm_connector *connector,
 		struct drm_atomic_state *atomic_state,
 		uint32_t property_idx, uint64_t value);
+
+/**
+ * sde_connector_post_init - update connector object with post
+ * initialization.
+ * It can update the debugfs, sysfs, entries
+ * @dev: Pointer to drm device struct
+ * @conn: Pointer to drm connector
+ * Returns: Zero on success
+ */
+int sde_connector_post_init(struct drm_device *dev, struct drm_connector *conn);
 
 /**
  * sde_connector_init - create drm connector object for a given display
@@ -1217,45 +1234,6 @@ static inline int sde_connector_state_get_compression_info(
 	return 0;
 }
 
-static inline bool sde_connector_is_quadpipe_3d_merge_enabled(
-		struct drm_connector_state *conn_state)
-{
-	enum sde_rm_topology_name topology;
-
-	if (!conn_state)
-		return false;
-
-	topology = sde_connector_get_property(conn_state, CONNECTOR_PROP_TOPOLOGY_NAME);
-	if ((topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE)
-			|| (topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC))
-		return true;
-
-	return false;
-}
-
-static inline bool sde_connector_is_dualpipe_3d_merge_enabled(
-		struct drm_connector_state *conn_state)
-{
-	enum sde_rm_topology_name topology;
-
-	if (!conn_state)
-		return false;
-
-	topology = sde_connector_get_property(conn_state, CONNECTOR_PROP_TOPOLOGY_NAME);
-	if ((topology == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE)
-			|| (topology == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC)
-			|| (topology == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_VDC))
-		return true;
-
-	return false;
-}
-
-static inline bool sde_connector_is_3d_merge_enabled(struct drm_connector_state *conn_state)
-{
-	return sde_connector_is_dualpipe_3d_merge_enabled(conn_state)
-		|| sde_connector_is_quadpipe_3d_merge_enabled(conn_state);
-}
-
 /**
 * sde_connector_set_msm_mode - set msm_mode for connector state
 * @conn_state: Pointer to drm connector state structure
@@ -1334,6 +1312,8 @@ int sde_connector_esd_status(struct drm_connector *connector);
 
 const char *sde_conn_get_topology_name(struct drm_connector *conn,
 		struct msm_display_topology topology);
+void _sde_connector_report_panel_dead(struct sde_connector *conn,
+		bool skip_pre_kickoff);
 
 /*
  * sde_connector_is_line_insertion_supported - get line insertion

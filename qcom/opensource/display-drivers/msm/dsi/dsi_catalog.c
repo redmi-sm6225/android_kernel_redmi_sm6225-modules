@@ -66,7 +66,6 @@ static void dsi_catalog_cmn_init(struct dsi_ctrl_hw *ctrl,
 		dsi_ctrl_hw_cmn_wait4dynamic_refresh_done;
 	ctrl->ops.hs_req_sel = dsi_ctrl_hw_cmn_hs_req_sel;
 	ctrl->ops.vid_engine_busy = dsi_ctrl_hw_cmn_vid_engine_busy;
-	ctrl->ops.init_cmddma_trig_ctrl = dsi_ctrl_hw_cmn_init_cmddma_trig_ctrl;
 
 	switch (version) {
 	case DSI_CTRL_VERSION_2_2:
@@ -234,7 +233,7 @@ static void dsi_catalog_phy_4_0_init(struct dsi_phy_hw *phy)
 		dsi_phy_hw_v4_0_cache_phy_timings;
 	phy->ops.set_continuous_clk = dsi_phy_hw_v4_0_set_continuous_clk;
 	phy->ops.commit_phy_timing = dsi_phy_hw_v4_0_commit_phy_timing;
-	phy->ops.phy_idle_off = NULL;
+	phy->ops.phy_idle_off = dsi_phy_hw_v4_0_phy_idle_off;
 }
 
 /**

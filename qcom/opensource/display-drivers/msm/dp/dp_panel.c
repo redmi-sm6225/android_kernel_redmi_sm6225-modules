@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -388,7 +388,7 @@ static void dp_panel_update_tu_timings(struct dp_tu_calc_input *in,
 	tu->orig_lwidth          = in->hactive;
 	tu->hbp_relative_to_pclk_fp = drm_fixp_from_fraction(in->hporch, 1);
 	tu->orig_hbp             = in->hporch;
-	tu->rb2                  = (in->hporch < 160) ? 1 : 0;
+	tu->rb2                  = (in->hporch <= 80) ? 1 : 0;
 
 	if (tu->pixelEnc == 420) {
 		temp1_fp = drm_fixp_from_fraction(2, 1);
@@ -418,8 +418,6 @@ static void dp_panel_update_tu_timings(struct dp_tu_calc_input *in,
 
 	if (!in->dsc_en)
 		goto fec_check;
-
-	tu->bpp = 24; // hardcode to 24 if DSC is enabled.
 
 	temp1_fp = drm_fixp_from_fraction(in->compress_ratio, 100);
 	temp2_fp = drm_fixp_from_fraction(in->bpp, 1);
@@ -1575,7 +1573,7 @@ static int dp_panel_dsc_prepare_basic_params(
 	comp_info->comp_type = MSM_DISPLAY_COMPRESSION_DSC;
 	comp_info->tgt_bpp = DSC_TGT_BPP;
 	comp_info->src_bpp = dp_mode->timing.bpp;
-	comp_info->comp_ratio = mult_frac(100, dp_mode->timing.bpp, DSC_TGT_BPP);
+	comp_info->comp_ratio = dp_mode->timing.bpp / DSC_TGT_BPP;
 	comp_info->enabled = true;
 
 	return 0;
@@ -1683,10 +1681,6 @@ static int dp_panel_read_dpcd(struct dp_panel *dp_panel, bool multi_func)
 
 	if (drm_dp_enhanced_frame_cap(dpcd))
 		link_info->capabilities |= DP_LINK_CAP_ENHANCED_FRAMING;
-
-	rlen = drm_dp_dpcd_read(panel->aux->drm_aux, DP_TEST_SINK_MISC, &temp, 1);
-	if ((rlen == 1) && (temp & DP_TEST_CRC_SUPPORTED))
-		link_info->capabilities |= DP_LINK_CAP_CRC;
 
 	dfp_count = dpcd[DP_DOWN_STREAM_PORT_COUNT] &
 						DP_DOWN_STREAM_PORT_COUNT;
@@ -1958,7 +1952,7 @@ static u32 dp_panel_get_supported_bpp(struct dp_panel *dp_panel,
 	if (bpp < min_supported_bpp)
 		DP_ERR("bpp %d is below minimum supported bpp %d\n", bpp,
 				min_supported_bpp);
-	if (dsc_en && bpp != 24 && bpp != 30 && bpp != 36)
+	if (dp_panel->dsc_en && bpp != 24 && bpp != 30 && bpp != 36)
 		DP_ERR("bpp %d is not supported when dsc is enabled\n", bpp);
 
 	return bpp;
@@ -2378,9 +2372,6 @@ static int dp_panel_deinit_panel_info(struct dp_panel *dp_panel, u32 flags)
 	dhdr_vsif_sdp = &panel->catalog->dhdr_vsif_sdp;
 	shdr_if_sdp = &panel->catalog->shdr_if_sdp;
 	vsc_colorimetry = &panel->catalog->vsc_colorimetry;
-
-	/*clearing LINK INFO capabilities during disconnect*/
-	dp_panel->link_info.capabilities = 0;
 
 	if (dp_panel->edid_ctrl->edid)
 		sde_free_edid((void **)&dp_panel->edid_ctrl);
@@ -3001,7 +2992,7 @@ static void dp_panel_convert_to_dp_mode(struct dp_panel *dp_panel,
 	comp_info->src_bpp = default_bpp;
 	comp_info->tgt_bpp = default_bpp;
 	comp_info->comp_type = MSM_DISPLAY_COMPRESSION_NONE;
-	comp_info->comp_ratio = MSM_DISPLAY_COMPRESSION_RATIO_NONE;
+	comp_info->comp_ratio = 1;
 	comp_info->enabled = false;
 
 	/* As YUV was not supported now, so set the default format to RGB */
@@ -3022,7 +3013,7 @@ static void dp_panel_convert_to_dp_mode(struct dp_panel *dp_panel,
 	dp_mode->timing.bpp = dp_panel_get_mode_bpp(dp_panel,
 			dp_mode->timing.bpp, dp_mode->timing.pixel_clk_khz, dsc_en);
 
-	if (dsc_en) {
+	if (dp_panel->dsc_en && dsc_en) {
 		if (dp_panel_dsc_prepare_basic_params(comp_info,
 					dp_mode, dp_panel)) {
 			DP_DEBUG("prepare DSC basic params failed\n");
@@ -3036,7 +3027,7 @@ static void dp_panel_convert_to_dp_mode(struct dp_panel *dp_panel,
 		}
 
 		rc = sde_dsc_populate_dsc_private_params(&comp_info->dsc_info,
-				dp_mode->timing.h_active, dp_mode->timing.widebus_en);
+				dp_mode->timing.h_active);
 		if (rc) {
 			DP_DEBUG("failed populating other dsc params\n");
 			return;
@@ -3057,70 +3048,6 @@ static void dp_panel_update_pps(struct dp_panel *dp_panel, char *pps_cmd)
 	catalog = panel->catalog;
 	catalog->stream_id = dp_panel->stream_id;
 	catalog->pps_flush(catalog);
-}
-
-int dp_panel_get_src_crc(struct dp_panel *dp_panel, u16 *crc)
-{
-	struct dp_catalog_panel *catalog;
-	struct dp_panel_private *panel;
-
-	panel = container_of(dp_panel, struct dp_panel_private, dp_panel);
-
-	catalog = panel->catalog;
-	return catalog->get_src_crc(catalog, crc);
-}
-
-int dp_panel_get_sink_crc(struct dp_panel *dp_panel, u16 *crc)
-{
-	int rc = 0;
-	struct dp_panel_private *panel;
-	struct drm_dp_aux *drm_aux;
-	u8 crc_bytes[6];
-
-	panel = container_of(dp_panel, struct dp_panel_private, dp_panel);
-	drm_aux = panel->aux->drm_aux;
-
-	/*
-	 * At DP_TEST_CRC_R_CR, there's 6 bytes containing CRC data, 2 bytes
-	 * per component (RGB or CrYCb).
-	 */
-	rc = drm_dp_dpcd_read(drm_aux, DP_TEST_CRC_R_CR, crc_bytes, 6);
-	if (rc < 0)
-		return rc;
-
-	rc = 0;
-	crc[0] = crc_bytes[0] | crc_bytes[1] << 8;
-	crc[1] = crc_bytes[2] | crc_bytes[3] << 8;
-	crc[2] = crc_bytes[4] | crc_bytes[5] << 8;
-
-	return rc;
-}
-
-int dp_panel_sink_crc_enable(struct dp_panel *dp_panel, bool enable)
-{
-	int rc = 0;
-	struct dp_panel_private *panel;
-	struct drm_dp_aux *drm_aux;
-	ssize_t ret;
-	u8 buf;
-
-	panel = container_of(dp_panel, struct dp_panel_private, dp_panel);
-	drm_aux = panel->aux->drm_aux;
-
-	if (dp_panel->link_info.capabilities & DP_LINK_CAP_CRC) {
-		ret = drm_dp_dpcd_readb(drm_aux, DP_TEST_SINK, &buf);
-		if (ret < 0)
-			return ret;
-
-		ret = drm_dp_dpcd_writeb(drm_aux, DP_TEST_SINK, buf | DP_TEST_SINK_START);
-		if (ret < 0)
-			return ret;
-
-		drm_dp_dpcd_readb(drm_aux, DP_TEST_SINK, &buf);
-		DP_DEBUG("Enabled CRC: %x\n", buf);
-	}
-
-	return rc;
 }
 
 struct dp_panel *dp_panel_get(struct dp_panel_in *in)
@@ -3195,9 +3122,6 @@ struct dp_panel *dp_panel_get(struct dp_panel_in *in)
 	dp_panel->read_mst_cap = dp_panel_read_mst_cap;
 	dp_panel->convert_to_dp_mode = dp_panel_convert_to_dp_mode;
 	dp_panel->update_pps = dp_panel_update_pps;
-	dp_panel->get_src_crc = dp_panel_get_src_crc;
-	dp_panel->get_sink_crc = dp_panel_get_sink_crc;
-	dp_panel->sink_crc_enable = dp_panel_sink_crc_enable;
 
 	sde_conn = to_sde_connector(dp_panel->connector);
 	sde_conn->drv_panel = dp_panel;

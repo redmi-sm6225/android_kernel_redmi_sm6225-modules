@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _DSI_PHY_HW_H_
@@ -116,7 +116,6 @@ struct dsi_phy_per_lane_cfgs {
  * @is_phy_timing_present:	Boolean whether phy timings are defined.
  * @regulators:       Regulator settings for lanes.
  * @pll_source:       PLL source.
- * @data_lanes:       Bitmask of enum dsi_data_lanes.
  * @lane_map:         DSI logical to PHY lane mapping.
  * @force_clk_lane_hs:Boolean whether to force clock lane in HS mode.
  * @phy_type:         Phy-type (Dphy/Cphy).
@@ -135,7 +134,6 @@ struct dsi_phy_cfg {
 	enum dsi_phy_type phy_type;
 	unsigned long bit_clk_rate_hz;
 	struct dsi_split_link_config split_link;
-	u32 data_lanes;
 };
 
 struct dsi_phy_hw;
@@ -293,10 +291,8 @@ struct dsi_phy_hw_ops {
 	/**
 	 * phy_idle_off() - Disable PHY hardware when exiting idle screen
 	 * @phy:      Pointer to DSI PHY hardware object.
-	 * @cfg:      Per lane configurations for timing, strength and lane
-	 *	      configurations.
 	 */
-	void (*phy_idle_off)(struct dsi_phy_hw *phy, struct dsi_phy_cfg *cfg);
+	void (*phy_idle_off)(struct dsi_phy_hw *phy);
 
 	/**
 	 * calculate_timing_params() - calculates timing parameters.
@@ -395,6 +391,7 @@ struct dsi_phy_hw_ops {
  * @length:                Length of the DSI dynamic refresh register base map.
  * @index:                 Instance ID of the controller.
  * @version:               DSI PHY version.
+ * @clamp_enable:          True if phy clamp is enabled.
  * @phy_clamp_base:        Base address of phy clamp register map.
  * @feature_map:           Features supported by DSI PHY.
  * @ops:                   Function pointer to PHY operations.
@@ -407,6 +404,7 @@ struct dsi_phy_hw {
 	u32 index;
 
 	enum dsi_phy_version version;
+	bool clamp_enable;
 	void __iomem *phy_clamp_base;
 
 	DECLARE_BITMAP(feature_map, DSI_PHY_MAX_FEATURES);

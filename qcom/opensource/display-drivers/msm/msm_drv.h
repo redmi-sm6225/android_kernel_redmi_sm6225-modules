@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -117,7 +117,6 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_DMA_GC,
 	PLANE_PROP_FP16_GC,
 	PLANE_PROP_FP16_CSC,
-	PLANE_PROP_UBWC_STATS_ROI,
 
 	/* # of blob properties */
 	PLANE_PROP_BLOBCOUNT,
@@ -141,6 +140,7 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_INVERSE_PMA,
 	PLANE_PROP_FP16_IGC,
 	PLANE_PROP_FP16_UNMULT,
+	PLANE_PROP_UBWC_STATS_ROI,
 
 	/* enum/bitmask properties */
 	PLANE_PROP_BLEND_OP,
@@ -178,6 +178,7 @@ enum msm_mdp_crtc_property {
 	CRTC_PROP_ROT_CLK,
 	CRTC_PROP_ROI_V1,
 	CRTC_PROP_SECURITY_LEVEL,
+	CRTC_PROP_IDLE_TIMEOUT,
 	CRTC_PROP_DEST_SCALER,
 	CRTC_PROP_CAPTURE_OUTPUT,
 
@@ -239,6 +240,11 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_DSC_MODE,
 	CONNECTOR_PROP_WB_USAGE_TYPE,
 
+/* LQ.LCM - 2023.2.7 - transplant mi disp from zeus start */
+	CONNECTOR_PROP_MI_LAYER_INFO,
+	CONNECTOR_PROP_QSYNC_MIN_FPS_INDEX,
+/* LQ.LCM - 2023.2.7 - end modify */
+
 	/* total # of properties */
 	CONNECTOR_PROP_COUNT
 };
@@ -270,11 +276,8 @@ enum msm_display_wd_jitter_type {
 	MSM_DISPLAY_WD_LTJ_JITTER = BIT(2),
 };
 
-/**
- * Scale macros so that compression ratio is a factor of 100 everywhere
- */
-#define MSM_DISPLAY_COMPRESSION_RATIO_NONE 100
-#define MSM_DISPLAY_COMPRESSION_RATIO_MAX 500
+#define MSM_DISPLAY_COMPRESSION_RATIO_NONE 1
+#define MSM_DISPLAY_COMPRESSION_RATIO_MAX 5
 
 /**
  * enum msm_display_spr_pack_type - sub pixel rendering pack patterns supported
@@ -707,16 +710,10 @@ struct msm_display_vdc_info {
 #define DSC_BPP(config) ((config).bits_per_pixel >> 4)
 
 /**
- * Bits/component
- * returns the integer bpc value from the drm_dsc_config struct
- */
-#define DSC_BPC(config) ((config).bits_per_component)
-
-/**
  * struct msm_compression_info - defined panel compression
  * @enabled:          enabled/disabled
  * @comp_type:        type of compression supported
- * @comp_ratio:       compression ratio multiplied by 100
+ * @comp_ratio:       compression ratio
  * @src_bpp:          bits per pixel before compression
  * @tgt_bpp:          bits per pixel after compression
  * @dsc_info:         dsc configuration if the compression
@@ -837,24 +834,20 @@ struct msm_mode_info {
 
 /**
  * struct msm_resource_caps_info - defines hw resources
- * @num_lm_in_use       number of layer mixers allocated to a specified encoder
  * @num_lm              number of layer mixers available
  * @num_dsc             number of dsc available
  * @num_vdc             number of vdc available
  * @num_ctl             number of ctl available
  * @num_3dmux           number of 3d mux available
  * @max_mixer_width:    max width supported by layer mixer
- * @merge_3d_mask:      bitmap of available 3d mux resource
  */
 struct msm_resource_caps_info {
-	uint32_t num_lm_in_use;
 	uint32_t num_lm;
 	uint32_t num_dsc;
 	uint32_t num_vdc;
 	uint32_t num_ctl;
 	uint32_t num_3dmux;
 	uint32_t max_mixer_width;
-	unsigned long merge_3d_mask;
 };
 
 /**
@@ -1126,8 +1119,6 @@ struct drm_atomic_state *msm_atomic_state_alloc(struct drm_device *dev);
 void msm_atomic_state_clear(struct drm_atomic_state *state);
 void msm_atomic_state_free(struct drm_atomic_state *state);
 
-void msm_atomic_flush_display_threads(struct msm_drm_private *priv);
-
 int msm_gem_init_vma(struct msm_gem_address_space *aspace,
 		struct msm_gem_vma *vma, int npages);
 void msm_gem_unmap_vma(struct msm_gem_address_space *aspace,
@@ -1279,9 +1270,6 @@ int msm_framebuffer_set_cache_hint(struct drm_framebuffer *fb,
 		u32 flags, u32 rd_type, u32 wr_type);
 int msm_framebuffer_get_cache_hint(struct drm_framebuffer *fb,
 		u32 *flags, u32 *rd_type, u32 *wr_type);
-
-int msm_fb_obj_get_attrs(struct drm_gem_object *obj,
-		int *fb_ns, int *fb_sec, int *fb_sec_dir);
 
 struct drm_fb_helper *msm_fbdev_init(struct drm_device *dev);
 void msm_fbdev_free(struct drm_device *dev);

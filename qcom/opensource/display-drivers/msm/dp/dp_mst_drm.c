@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -345,7 +345,6 @@ static bool dp_mst_bridge_mode_fixup(struct drm_bridge *drm_bridge,
 	dp = bridge->display;
 
 	dp->convert_to_dp_mode(dp, bridge_state->dp_panel, mode, &dp_mode);
-	dp->clear_reservation(dp, bridge_state->dp_panel);
 	convert_to_drm_mode(&dp_mode, adjusted_mode);
 
 	DP_MST_DEBUG("mst bridge [%d] mode:%s fixup\n", bridge->id, mode->name);
@@ -776,7 +775,6 @@ static void dp_mst_bridge_mode_set(struct drm_bridge *drm_bridge,
 	memcpy(&bridge->drm_mode, adjusted_mode, sizeof(bridge->drm_mode));
 	dp->convert_to_dp_mode(dp, bridge->dp_panel, adjusted_mode,
 			&bridge->dp_mode);
-	dp->clear_reservation(dp, dp_bridge_state->dp_panel);
 
 	DP_MST_INFO("mst bridge:%d conn:%d mode set complete %s\n", bridge->id,
 			DP_MST_CONN_ID(bridge), mode->name);
@@ -1165,7 +1163,6 @@ static int dp_mst_connector_atomic_check(struct drm_connector *connector,
 		void *display, struct drm_atomic_state *state)
 {
 	int rc = 0, slots, i;
-	bool vcpi_released = false;
 	struct drm_connector_state *old_conn_state;
 	struct drm_connector_state *new_conn_state;
 	struct drm_crtc *old_crtc;
@@ -1205,7 +1202,6 @@ static int dp_mst_connector_atomic_check(struct drm_connector *connector,
 				bridge->num_slots);
 	}
 
-	/*attempt to release vcpi slots on a modeset change for crtc state*/
 	if (drm_atomic_crtc_needs_modeset(crtc_state)) {
 		if (WARN_ON(!old_conn_state->best_encoder)) {
 			rc = -EINVAL;
@@ -1240,7 +1236,6 @@ static int dp_mst_connector_atomic_check(struct drm_connector *connector,
 						slots, rc);
 				goto end;
 			}
-			vcpi_released = true;
 		}
 
 		bridge_state->num_slots = 0;
@@ -1283,15 +1278,6 @@ mode_set:
 
 		if (WARN_ON(bridge_state->connector != connector)) {
 			rc = -EINVAL;
-			goto end;
-		}
-
-		/*
-		 * check if vcpi slots are trying to get allocated in same phase
-		 * as deallocation. If so, go to end to avoid allocation.
-		 */
-		if (vcpi_released) {
-			DP_WARN("skipping allocation since vcpi was released in the same state \n");
 			goto end;
 		}
 

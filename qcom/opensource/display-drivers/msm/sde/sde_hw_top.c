@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -363,26 +363,19 @@ void sde_hw_reset_ubwc(struct sde_hw_mdp *mdp, struct sde_mdss_cfg *m)
 	c = mdp->hw;
 	c.blk_off = 0x0;
 	ubwc_dec_version = SDE_REG_READ(&c, UBWC_DEC_HW_VERSION);
-	/* global ubwc version used in input fb encoding */
 	ubwc_enc_version = m->ubwc_rev;
 
 	if (IS_UBWC_40_SUPPORTED(ubwc_dec_version) || IS_UBWC_43_SUPPORTED(ubwc_dec_version)) {
-		/* for UBWC 2.0 ver = 0, mode = 0 will be programmed */
-		u32 ver = 0;
-		u32 mode = 0;
+		u32 ver = IS_UBWC_43_SUPPORTED(ubwc_dec_version) ? 3 : 2;
+		u32 mode = 1;
 		u32 reg = (m->mdp[0].ubwc_swizzle & 0x7) |
 			((m->mdp[0].ubwc_static & 0x1) << 3) |
 			((m->mdp[0].highest_bank_bit & 0x7) << 4) |
 			((m->macrotile_mode & 0x1) << 12);
 
-		if (IS_UBWC_43_SUPPORTED(ubwc_enc_version)) {
-			ver = 3;
-			mode = 1;
-		} else if (IS_UBWC_40_SUPPORTED(ubwc_enc_version)) {
-			ver = 2;
-			mode = 1;
-		} else if (IS_UBWC_30_SUPPORTED(ubwc_enc_version)) {
+		if (IS_UBWC_30_SUPPORTED(ubwc_enc_version)) {
 			ver = 1;
+			mode = 0;
 		}
 
 		SDE_REG_WRITE(&c, UBWC_STATIC, reg);
@@ -655,7 +648,7 @@ static void sde_hw_input_hw_fence_status(struct sde_hw_mdp *mdp, u64 *s_val, u64
 }
 
 static void sde_hw_setup_hw_fences_config(struct sde_hw_mdp *mdp, u32 protocol_id,
-	u32 client_phys_id, unsigned long ipcc_base_addr)
+	unsigned long ipcc_base_addr)
 {
 	u32 val, offset;
 	struct sde_hw_blk_reg_map c;
@@ -681,7 +674,7 @@ static void sde_hw_setup_hw_fences_config(struct sde_hw_mdp *mdp, u32 protocol_i
 	/* configure the attribs for the isr read_reg op */
 	offset = MDP_CTL_HW_FENCE_ID_OFFSET_m(MDP_CTL_HW_FENCE_IDm_ADDR, 0);
 	val = HW_FENCE_IPCC_PROTOCOLp_CLIENTc_RECV_ID(ipcc_base_addr,
-				protocol_id, client_phys_id);
+				protocol_id, HW_FENCE_IPCC_CLIENT_DPU);
 	SDE_REG_WRITE(&c, offset, val);
 
 	offset = MDP_CTL_HW_FENCE_ID_OFFSET_m(MDP_CTL_HW_FENCE_IDm_ATTR, 0);
@@ -720,7 +713,7 @@ static void sde_hw_setup_hw_fences_config(struct sde_hw_mdp *mdp, u32 protocol_i
 	/* configure the attribs for the isr load_data op */
 	offset = MDP_CTL_HW_FENCE_ID_OFFSET_m(MDP_CTL_HW_FENCE_IDm_ADDR, 4);
 	val =  HW_FENCE_IPCC_PROTOCOLp_CLIENTc_SEND(ipcc_base_addr,
-			protocol_id, client_phys_id);
+			protocol_id, HW_FENCE_IPCC_CLIENT_DPU);
 	SDE_REG_WRITE(&c, offset, val);
 
 	offset = MDP_CTL_HW_FENCE_ID_OFFSET_m(MDP_CTL_HW_FENCE_IDm_ATTR, 4);

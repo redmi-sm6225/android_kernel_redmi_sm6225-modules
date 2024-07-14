@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -977,6 +977,11 @@ static int msm_drm_component_init(struct device *dev)
 
 	drm_mode_config_reset(ddev);
 
+	ret = drm_dev_register(ddev, 0);
+	if (ret)
+		goto fail;
+	priv->registered = true;
+
 	if (kms && kms->funcs && kms->funcs->cont_splash_config) {
 		ret = kms->funcs->cont_splash_config(kms, NULL);
 		if (ret) {
@@ -984,11 +989,6 @@ static int msm_drm_component_init(struct device *dev)
 			goto fail;
 		}
 	}
-
-	ret = drm_dev_register(ddev, 0);
-	if (ret)
-		goto fail;
-	priv->registered = true;
 
 #if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
 	if (fbdev)
@@ -1038,25 +1038,6 @@ mdss_init_fail:
 	kfree(priv);
 
 	return ret;
-}
-
-void msm_atomic_flush_display_threads(struct msm_drm_private *priv)
-{
-	int i;
-
-	if (!priv) {
-		SDE_ERROR("invalid private data\n");
-		return;
-	}
-
-	for (i = 0; i < priv->num_crtcs; i++) {
-		if (priv->disp_thread[i].thread)
-			kthread_flush_worker(&priv->disp_thread[i].worker);
-		if (priv->event_thread[i].thread)
-			kthread_flush_worker(&priv->event_thread[i].worker);
-	}
-
-	kthread_flush_worker(&priv->pp_event_worker);
 }
 
 /*
@@ -1133,36 +1114,16 @@ static void msm_postclose(struct drm_device *dev, struct drm_file *file)
 	context_close(ctx);
 }
 
-static int msm_pending_crtc_last_close_timeout(struct msm_drm_private *priv)
-{
-	const struct msm_kms_funcs *funcs;
-	struct msm_kms *kms;
-	int timeout = LASTCLOSE_TIMEOUT_MS;
-
-	if (!priv || !priv->kms || !priv->kms->funcs)
-		return timeout;
-
-	kms = priv->kms;
-	funcs = kms->funcs;
-
-	if (funcs->get_input_fence_timeout)
-		timeout += funcs->get_input_fence_timeout(kms);
-
-	return timeout;
-}
-
 static void msm_lastclose(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_kms *kms;
-	int lastclose_timeout;
 	int i, rc;
 
 	if (!priv || !priv->kms)
 		return;
 
 	kms = priv->kms;
-	lastclose_timeout = msm_pending_crtc_last_close_timeout(priv);
 
 	/* check for splash status before triggering cleanup
 	 * if we end up here with splash status ON i.e before first
@@ -1171,14 +1132,16 @@ static void msm_lastclose(struct drm_device *dev)
 	if (kms->funcs && kms->funcs->check_for_splash
 		&& kms->funcs->check_for_splash(kms)) {
 		msm_wait_event_timeout(priv->pending_crtcs_event, !priv->pending_crtcs,
-			lastclose_timeout, rc);
+			LASTCLOSE_TIMEOUT_MS, rc);
 		if (!rc)
 			DRM_INFO("wait for crtc mask 0x%x failed, commit anyway...\n",
 				priv->pending_crtcs);
 
 		rc = kms->funcs->trigger_null_flush(kms);
-		if (rc)
+		if (rc) {
+			DRM_ERROR("null flush commit failure during lastclose\n");
 			return;
+		}
 	}
 
 	/*
@@ -1197,12 +1160,10 @@ static void msm_lastclose(struct drm_device *dev)
 
 	/* wait for any pending crtcs to finish before lastclose commit */
 	msm_wait_event_timeout(priv->pending_crtcs_event, !priv->pending_crtcs,
-			lastclose_timeout, rc);
+			LASTCLOSE_TIMEOUT_MS, rc);
 	if (!rc)
 		DRM_INFO("wait for crtc mask 0x%x failed, commit anyway...\n",
 				priv->pending_crtcs);
-
-	msm_atomic_flush_display_threads(priv);
 
 	if (priv->fbdev) {
 		rc = drm_fb_helper_restore_fbdev_mode_unlocked(priv->fbdev);
@@ -1216,7 +1177,7 @@ static void msm_lastclose(struct drm_device *dev)
 
 	/* wait again, before kms driver does it's lastclose commit */
 	msm_wait_event_timeout(priv->pending_crtcs_event, !priv->pending_crtcs,
-			lastclose_timeout, rc);
+			LASTCLOSE_TIMEOUT_MS, rc);
 	if (!rc)
 		DRM_INFO("wait for crtc mask 0x%x failed, commit anyway...\n",
 				priv->pending_crtcs);
@@ -1577,7 +1538,6 @@ static int msm_release(struct inode *inode, struct file *filp)
 	u32 count;
 	unsigned long flags;
 	LIST_HEAD(tmp_head);
-	int lastclose_timeout;
 	int ret = 0;
 
 	mutex_lock(&msm_release_lock);
@@ -1620,8 +1580,6 @@ static int msm_release(struct inode *inode, struct file *filp)
 		kfree(node);
 	}
 
-	lastclose_timeout = msm_pending_crtc_last_close_timeout(priv);
-
 	/**
 	 * Handle preclose operation here for removing fb's whose
 	 * refcount > 1. This operation is not triggered from upstream
@@ -1629,7 +1587,7 @@ static int msm_release(struct inode *inode, struct file *filp)
 	 */
 	if (drm_is_current_master(file_priv)) {
 		msm_wait_event_timeout(priv->pending_crtcs_event, !priv->pending_crtcs,
-			lastclose_timeout, ret);
+			LASTCLOSE_TIMEOUT_MS, ret);
 		if (!ret)
 			DRM_INFO("wait for crtc mask 0x%x failed, commit anyway...\n",
 				priv->pending_crtcs);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2009-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -107,15 +107,15 @@
 
 #define SDE_DBG_LOG_MARKER(name, marker, log) \
 	if (log) \
-		dev_err(sde_dbg_base.dev, "======== %s %s dump =========\n", marker, name)
+		dev_info(sde_dbg_base.dev, "======== %s %s dump =========\n", marker, name)
 
 #define SDE_DBG_LOG_ENTRY(off, x0, x4, x8, xc, log) \
 	if (log) \
-		dev_err(sde_dbg_base.dev, "0x%08x| %08x %08x %08x %08x\n", off, x0, x4, x8, xc)
+		dev_info(sde_dbg_base.dev, "0x%08x| %08x %08x %08x %08x\n", off, x0, x4, x8, xc)
 
 #define SDE_DBG_LOG_DUMP_ADDR(name, addr, size, off, log) \
 	if (log) \
-		dev_err(sde_dbg_base.dev, "%s: start_addr:0x%pK len:0x%x offset=0x%lx\n", \
+		dev_info(sde_dbg_base.dev, "%s: start_addr:0x%pK len:0x%x offset=0x%lx\n", \
 				name, addr, size, off)
 
 #define SDE_DBG_LOG_DEBUGBUS(name, addr, block_id, test_id, val) \
@@ -659,7 +659,7 @@ static struct notifier_block sde_md_notify_blk = {
 	.priority = INT_MAX,
 };
 
-static int sde_register_md_panic_notifer(void)
+static int sde_register_md_panic_notifer()
 {
 	qcom_va_md_register("display", &sde_md_notify_blk);
 	return 0;
@@ -682,7 +682,7 @@ void sde_mini_dump_add_va_region(const char *name, u32 size, void *virt_addr)
 	return;
 }
 #else
-static int sde_register_md_panic_notifer(void)
+static int sde_register_md_panic_notifer()
 {
 	return 0;
 }
@@ -1191,6 +1191,7 @@ void sde_evtlog_dump_all(struct sde_dbg_evtlog *evtlog)
 	char buf[SDE_EVTLOG_BUF_MAX];
 	bool update_last_entry = true;
 	u32 in_log, in_mem, in_dump;
+	u32 log_size = 0;
 	char *dump_addr = NULL;
 	int i;
 
@@ -1201,22 +1202,21 @@ void sde_evtlog_dump_all(struct sde_dbg_evtlog *evtlog)
 	in_mem = evtlog->dump_mode & SDE_DBG_DUMP_IN_MEM;
 	in_dump = evtlog->dump_mode & SDE_DBG_DUMP_IN_COREDUMP;
 
-	if (!evtlog->dumped_evtlog) {
-		evtlog->dumped_evtlog = kvzalloc((SDE_EVTLOG_ENTRY * SDE_EVTLOG_BUF_MAX),
-				GFP_KERNEL);
-		if (!evtlog->dumped_evtlog)
-			return;
+	log_size = sde_evtlog_count(evtlog);
+	if (!log_size)
+		return;
 
-		evtlog->log_size = SDE_EVTLOG_ENTRY;
+	if (!evtlog->dumped_evtlog) {
+		if (in_mem)
+			log_size = SDE_EVTLOG_ENTRY;
+		evtlog->dumped_evtlog = kvzalloc((log_size * SDE_EVTLOG_BUF_MAX), GFP_KERNEL);
+		evtlog->log_size = log_size;
 	}
 	dump_addr = evtlog->dumped_evtlog;
 
 	if ((in_mem || in_dump) && dump_addr && (!sde_dbg_base.coredump_reading)) {
-		for (i =  0; i < evtlog->log_size; i++) {
-			if (!sde_evtlog_dump_to_buffer(evtlog, dump_addr, SDE_EVTLOG_BUF_MAX,
-					update_last_entry, true))
-				break;
-
+		while (sde_evtlog_dump_to_buffer(evtlog, dump_addr, SDE_EVTLOG_BUF_MAX,
+				update_last_entry, true)) {
 			dump_addr += SDE_EVTLOG_BUF_MAX;
 			update_last_entry = false;
 		}
@@ -1232,11 +1232,8 @@ void sde_evtlog_dump_all(struct sde_dbg_evtlog *evtlog)
 	}
 
 	if (in_log) {
-		for (i =  0; i < evtlog->log_size; i++) {
-			if (!sde_evtlog_dump_to_buffer(evtlog, buf, SDE_EVTLOG_BUF_MAX,
-					update_last_entry, false))
-				break;
-
+		while (sde_evtlog_dump_to_buffer(evtlog, buf, sizeof(buf),
+					update_last_entry, false)) {
 			pr_info("%s\n", buf);
 			update_last_entry = false;
 		}
@@ -2434,10 +2431,10 @@ static ssize_t sde_dbg_reg_base_reg_read(struct file *file,
 
 			if (cur_offset == 0) {
 				tot += scnprintf(dbg->buf + tot, dbg->buf_len - tot,
-					"0x%08x:", ((int) dbg->off) + cur_offset);
+					"0x%08x:", ((int) dbg->off) - cur_offset);
 			} else if (!(cur_offset % ROW_BYTES)) { // Header
 				tot += scnprintf(dbg->buf + tot, dbg->buf_len - tot,
-					"\n0x%08x:", ((int) dbg->off) + cur_offset);
+					"\n0x%08x:", ((int) dbg->off) - cur_offset);
 			}
 
 			reg_val = SDE_REG_READ(&c, cur_offset);
@@ -2522,7 +2519,6 @@ int sde_dbg_debugfs_register(struct device *dev)
 	debugfs_create_file("recovery_reg", 0400, debugfs_root, NULL, &sde_recovery_reg_fops);
 
 	debugfs_create_u32("enable", 0600, debugfs_root, &(sde_dbg_base.evtlog->enable));
-	debugfs_create_u32("reglog_enable", 0600, debugfs_root, &(sde_dbg_base.reglog->enable));
 	debugfs_create_u32("panic", 0600, debugfs_root, &sde_dbg_base.panic_on_err);
 	debugfs_create_u32("dump_mode", 0600, debugfs_root, &sde_dbg_base.dump_option);
 	debugfs_create_u64("reg_dump_blk_mask", 0600, debugfs_root, &sde_dbg_base.dump_blk_mask);
@@ -2873,15 +2869,6 @@ void sde_dbg_reg_register_dump_range(const char *base_name,
 				__builtin_return_address(0), base_name,
 				range_name, offset_start, offset_end);
 		return;
-	}
-
-	/* return if the node is already present in sub_range_list */
-	if (!list_empty(&reg_base->sub_range_list)) {
-		list_for_each_entry(range, &reg_base->sub_range_list, head) {
-			if (range->offset.start == offset_start &&
-				range->offset.end == offset_end)
-				return;
-		}
 	}
 
 	range = kzalloc(sizeof(*range), GFP_KERNEL);

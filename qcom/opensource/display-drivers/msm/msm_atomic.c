@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2014 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -88,8 +88,7 @@ static inline bool _msm_seamless_for_crtc(struct drm_atomic_state *state,
 	if (msm_is_mode_seamless_dms(msm_mode) && !enable)
 		return true;
 
-	if (!crtc_state->mode_changed && crtc_state->connectors_changed &&
-		crtc_state->active) {
+	if (!crtc_state->mode_changed && crtc_state->connectors_changed) {
 		for_each_old_connector_in_state(state, connector,
 				conn_state, i) {
 			if ((conn_state->crtc == crtc_state->crtc) ||
@@ -114,23 +113,11 @@ static inline bool _msm_seamless_for_conn(struct drm_connector *connector,
 	if (!old_conn_state || !old_conn_state->crtc)
 		return false;
 
-	if (!priv || !priv->kms || !priv->kms->funcs->get_msm_mode)
-		return false;
-
-	msm_mode = priv->kms->funcs->get_msm_mode(
-			_msm_get_conn_state(old_conn_state->crtc->state));
-	if (!msm_mode)
-		return false;
-
 	if (!old_conn_state->crtc->state->mode_changed &&
 			!old_conn_state->crtc->state->active_changed &&
 			old_conn_state->crtc->state->connectors_changed) {
-		if (old_conn_state->crtc == connector->state->crtc) {
-			if (enable && msm_is_private_mode_changed(
-				_msm_get_conn_state(old_conn_state->crtc->state)))
-				return false;
+		if (old_conn_state->crtc == connector->state->crtc)
 			return true;
-		}
 	}
 
 	if (enable)
@@ -138,6 +125,14 @@ static inline bool _msm_seamless_for_conn(struct drm_connector *connector,
 
 	if (!connector->state->crtc &&
 		old_conn_state->crtc->state->connectors_changed)
+		return false;
+
+	if (!priv || !priv->kms || !priv->kms->funcs->get_msm_mode)
+		return false;
+
+	msm_mode = priv->kms->funcs->get_msm_mode(
+			_msm_get_conn_state(old_conn_state->crtc->state));
+	if (!msm_mode)
 		return false;
 
 	if (msm_is_mode_seamless(msm_mode) ||
@@ -324,13 +319,10 @@ msm_crtc_set_mode(struct drm_device *dev, struct drm_atomic_state *old_state)
 		mode = &new_crtc_state->mode;
 		adjusted_mode = &new_crtc_state->adjusted_mode;
 
-		if (!new_crtc_state->active)
-			continue;
-
 		if (!new_crtc_state->mode_changed &&
 				new_crtc_state->connectors_changed) {
 			if (_msm_seamless_for_conn(connector,
-					old_conn_state, true))
+					old_conn_state, false))
 				continue;
 		} else if (!new_crtc_state->mode_changed) {
 			if (!msm_is_private_mode_changed(

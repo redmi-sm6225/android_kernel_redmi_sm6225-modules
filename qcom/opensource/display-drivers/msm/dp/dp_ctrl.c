@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -647,9 +647,6 @@ static void dp_ctrl_set_clock_rate(struct dp_ctrl_private *ctrl,
 	u32 num = ctrl->parser->mp[clk_type].num_clk;
 	struct dss_clk *cfg = ctrl->parser->mp[clk_type].clk_config;
 
-	/* convert to HZ for byte2 ops */
-	rate *= 1000;
-
 	while (num && strcmp(cfg->clk_name, name)) {
 		num--;
 		cfg++;
@@ -1129,7 +1126,7 @@ static void dp_ctrl_mst_calculate_rg(struct dp_ctrl_private *ctrl,
 
 	lclk = drm_dp_bw_code_to_link_rate(ctrl->link->link_params.bw_code);
 	if (panel->pinfo.comp_info.enabled)
-		bpp = panel->pinfo.comp_info.tgt_bpp;
+		bpp = DSC_BPP(panel->pinfo.comp_info.dsc_info.config);
 
 	/* min_slot_cnt */
 	numerator = pclk * bpp * 64 * 1000;
@@ -1311,7 +1308,6 @@ static int dp_ctrl_stream_on(struct dp_ctrl *dp_ctrl, struct dp_panel *panel)
 	/* wait for link training completion before fec config as per spec */
 	dp_ctrl_fec_setup(ctrl);
 	dp_ctrl_dsc_setup(ctrl, panel);
-	panel->sink_crc_enable(panel, true);
 
 	return rc;
 }
@@ -1519,30 +1515,6 @@ void dp_ctrl_set_sim_mode(struct dp_ctrl *dp_ctrl, bool en)
 	DP_INFO("sim_mode=%d\n", ctrl->sim_mode);
 }
 
-int dp_ctrl_setup_misr(struct dp_ctrl *dp_ctrl)
-{
-	struct dp_ctrl_private *ctrl;
-
-	if (!dp_ctrl)
-		return -EINVAL;
-
-	ctrl = container_of(dp_ctrl, struct dp_ctrl_private, dp_ctrl);
-
-	return ctrl->catalog->setup_misr(ctrl->catalog);
-}
-
-int dp_ctrl_read_misr(struct dp_ctrl *dp_ctrl, struct dp_misr40_data *data)
-{
-	struct dp_ctrl_private *ctrl;
-
-	if (!dp_ctrl)
-		return -EINVAL;
-
-	ctrl = container_of(dp_ctrl, struct dp_ctrl_private, dp_ctrl);
-
-	return ctrl->catalog->read_misr(ctrl->catalog, data);
-}
-
 struct dp_ctrl *dp_ctrl_get(struct dp_ctrl_in *in)
 {
 	int rc = 0;
@@ -1593,8 +1565,6 @@ struct dp_ctrl *dp_ctrl_get(struct dp_ctrl_in *in)
 	dp_ctrl->stream_pre_off = dp_ctrl_stream_pre_off;
 	dp_ctrl->set_mst_channel_info = dp_ctrl_set_mst_channel_info;
 	dp_ctrl->set_sim_mode = dp_ctrl_set_sim_mode;
-	dp_ctrl->setup_misr = dp_ctrl_setup_misr;
-	dp_ctrl->read_misr = dp_ctrl_read_misr;
 
 	return dp_ctrl;
 error:

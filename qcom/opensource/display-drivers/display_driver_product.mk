@@ -8,7 +8,6 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 endif
 
 ifeq ($(DISPLAY_DLKM_ENABLE),  true)
-	PRODUCT_PACKAGES += msm_drm.ko
+	PRODUCT_PACKAGES += msm_drm.ko \
+						ktz8866_leds.ko
 endif
-
-DISPLAY_MODULES_DRIVER := msm_drm.ko

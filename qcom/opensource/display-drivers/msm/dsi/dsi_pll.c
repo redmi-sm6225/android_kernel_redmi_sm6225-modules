@@ -75,6 +75,11 @@ static void dsi_pll_parse_dfps(struct platform_device *pdev,
 	u64 size;
 	u32 offsets[2];
 
+	if (pll_res->dfps != NULL) {
+		DSI_PLL_INFO(pll_res, "dfps info already populated");
+		return;
+	}
+
 	pnode = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
 	if (IS_ERR_OR_NULL(pnode)) {
 		DSI_PLL_INFO(pll_res, "of_parse_phandle failed\n");
@@ -105,6 +110,11 @@ static void dsi_pll_parse_dfps(struct platform_device *pdev,
 	/* memcopy complete dfps structure from kernel virtual memory */
 	memcpy_fromio(pll_res->dfps, trim_codes, sizeof(struct dfps_info));
 
+	if (pll_res->dfps->vco_rate_cnt >= DFPS_MAX_NUM_OF_FRAME_RATES) {
+		DSI_PLL_ERR(pll_res, "vco_rate_cnt = %d -> %d\n",
+			pll_res->dfps->vco_rate_cnt, DFPS_MAX_NUM_OF_FRAME_RATES);
+		pll_res->dfps->vco_rate_cnt = DFPS_MAX_NUM_OF_FRAME_RATES;
+	}
 mem_err:
 	if (trim_codes)
 		memunmap(trim_codes);
@@ -151,7 +161,7 @@ static int dsi_pll_parse_dfps_from_dt(struct platform_device *pdev,
 	}
 
 	if (header.magic_id != DSI_PLL_TRIM_CODES_MAGIC_ID) {
-		DSI_PLL_ERR(pll_res, "pll codes magic id not match\n");
+		DSI_PLL_DBG(pll_res, "pll codes magic id not match\n");
 		rc = -EINVAL;
 		goto err;
 	}

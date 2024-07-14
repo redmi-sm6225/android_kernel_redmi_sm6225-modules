@@ -73,8 +73,6 @@ enum sde_fence_event {
  * @ipcc_out_signal_pp_idx: index of the output signal ping-pong
  * @ipcc_out_client: destination client id (APPS for the FCTL)
  * @ipcc_this_client: ipcc dpu client id (For Waipio: APPS, For Kailua: DPU HW)
- * @dma_context: per client dma context used to create join fences
- * @hw_fence_array_seqno: per-client seq number counter for join fences
  */
 struct sde_hw_fence_data {
 	int client_id;
@@ -87,8 +85,6 @@ struct sde_hw_fence_data {
 	u32 ipcc_out_signal_pp_idx;
 	u32 ipcc_out_client;
 	u32 ipcc_this_client;
-	u64 dma_context;
-	u32 hw_fence_array_seqno;
 };
 
 #if IS_ENABLED(CONFIG_SYNC_FILE)
@@ -196,12 +192,11 @@ int sde_fence_update_hw_fences_txq(struct sde_fence_context *ctx, bool vid_mode,
  * @ctl: hw ctl to update the input-fence and enable hw-fences
  * @debugfs_hw_fence: hw-fence timestamp debugfs value
  * @hw_mdp: pointer to hw_mdp to get timestamp registers
- * @disable: bool to indicate if we should disable hw-fencing for this commit
  *
  * Returns: Zero on success, otherwise returns an error code.
  */
 int sde_fence_update_input_hw_fence_signal(struct sde_hw_ctl *ctl, u32 debugfs_hw_fence,
-	struct sde_hw_mdp *hw_mdp, bool disable);
+	struct sde_hw_mdp *hw_mdp);
 
 /**
  * sde_fence_deinit - deinit fence container
@@ -259,12 +254,6 @@ void sde_debugfs_timeline_dump(struct sde_fence_context *ctx,
  * @s: used to writing on debugfs node
  */
 void sde_fence_list_dump(struct dma_fence *fence, struct seq_file **s);
-
-/**
- * sde_fence_dump - dumps fence info for specified fence
- * @fence: Pointer to fence to dump info for
- */
-void sde_fence_dump(struct dma_fence *fence);
 
 #else
 static inline void *sde_sync_get(uint64_t fd)
@@ -337,10 +326,6 @@ void sde_fence_list_dump(struct dma_fence *fence, struct seq_file **s)
 	/* do nothing */
 }
 
-void sde_fence_dump(struct dma_fence *fence)
-{
-	/* do nothing */
-}
 #endif /* IS_ENABLED(CONFIG_SW_SYNC) */
 
 #endif /* _SDE_FENCE_H_ */

@@ -1055,18 +1055,6 @@ static void dp_mst_sim_notify(struct dp_mst_sim_context *ctx,
 	queue_work(ctx->wq, &work->base);
 }
 
-static void dp_mst_sim_free_ports(struct dp_mst_sim_context *ctx)
-{
-	u32 i;
-
-	for (i = 0; i < ctx->port_num; i++)
-		kfree(ctx->ports[i].edid);
-
-	kfree(ctx->ports);
-	ctx->ports = NULL;
-	ctx->port_num = 0;
-}
-
 int dp_mst_sim_update(void *mst_sim_context, u32 port_num,
 		struct dp_mst_sim_port *ports)
 {
@@ -1076,7 +1064,7 @@ int dp_mst_sim_update(void *mst_sim_context, u32 port_num,
 	u32 update_mask = 0;
 	u32 i;
 
-	if (!ctx || port_num >= 15 || !ports)
+	if (!ctx || port_num >= 15)
 		return -EINVAL;
 
 	mutex_lock(&ctx->session_lock);
@@ -1093,18 +1081,18 @@ int dp_mst_sim_update(void *mst_sim_context, u32 port_num,
 		}
 	}
 
-	dp_mst_sim_free_ports(ctx);
-
-	if (!port_num)
-		goto end;
+	for (i = 0; i < ctx->port_num; i++)
+		kfree(ctx->ports[i].edid);
+	kfree(ctx->ports);
+	ctx->port_num = 0;
 
 	ctx->ports = kcalloc(port_num, sizeof(*ports), GFP_KERNEL);
 	if (!ctx->ports) {
 		rc = -ENOMEM;
 		goto fail;
 	}
-	ctx->port_num = port_num;
 
+	ctx->port_num = port_num;
 	for (i = 0; i < port_num; i++) {
 		ctx->ports[i] = ports[i];
 		if (ports[i].edid_size) {
@@ -1126,10 +1114,12 @@ int dp_mst_sim_update(void *mst_sim_context, u32 port_num,
 	}
 
 fail:
-	if (rc)
-		dp_mst_sim_free_ports(ctx);
+	if (rc) {
+		for (i = 0; i < ctx->port_num; i++)
+			kfree(ctx->ports[i].edid);
+		kfree(ctx->ports);
+	}
 
-end:
 	mutex_unlock(&ctx->session_lock);
 
 	if (update_mask)

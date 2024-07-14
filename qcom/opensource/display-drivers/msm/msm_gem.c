@@ -435,20 +435,20 @@ static int msm_gem_get_iova_locked(struct drm_gem_object *obj,
 {
 	struct msm_gem_object *msm_obj = to_msm_bo(obj);
 	struct msm_gem_vma *vma;
+	struct device *dev;
 	int ret = 0;
 
 	WARN_ON(!mutex_is_locked(&msm_obj->lock));
 
 	vma = lookup_vma(obj, aspace);
 
+	dev = msm_gem_get_aspace_device(aspace);
 	if (!vma) {
 		struct page **pages;
-		struct device *dev;
 		struct dma_buf *dmabuf;
 		bool reattach = false;
 		unsigned long dma_map_attrs;
 
-		dev = msm_gem_get_aspace_device(aspace);
 		if ((dev && obj->import_attach) &&
 				((dev != obj->import_attach->dev) ||
 				msm_obj->obj_dirty)) {
@@ -530,6 +530,11 @@ static int msm_gem_get_iova_locked(struct drm_gem_object *obj,
 		mutex_lock(&aspace->list_lock);
 		msm_gem_add_obj_to_aspace_active_list(aspace, obj);
 		mutex_unlock(&aspace->list_lock);
+	}
+	if (dev && !dev_is_dma_coherent(dev) && (msm_obj->flags & MSM_BO_CACHED)
+			&& (msm_obj->sgt)){
+		dma_sync_sg_for_device(dev, msm_obj->sgt->sgl,
+				msm_obj->sgt->nents, DMA_BIDIRECTIONAL);
 	}
 
 	return 0;
@@ -1092,14 +1097,6 @@ static struct drm_gem_object *_msm_gem_new(struct drm_device *dev,
 		ret = drm_gem_object_init(dev, obj, size);
 		if (ret)
 			goto fail;
-
-		/*
-		 * Our buffers are kept pinned, so allocating them from the
-		 * MOVABLE zone is a really bad idea, and conflicts with CMA.
-		 * See comments above new_inode() why this is required _and_
-		 * expected if you're going to pin these pages.
-		 */
-		mapping_set_gfp_mask(obj->filp->f_mapping, GFP_HIGHUSER);
 	}
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))

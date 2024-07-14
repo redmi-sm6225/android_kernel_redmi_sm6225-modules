@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -313,6 +313,7 @@ enum sde_crtc_hw_fence_flags {
  * @misr_reconfigure : boolean entry indicates misr reconfigure status
  * @misr_frame_count  : misr frame count provided by client
  * @misr_data     : store misr data before turning off the clocks.
+ * @idle_notify_work: delayed worker to notify idle timeout to user space
  * @power_event   : registered power event handle
  * @cur_perf      : current performance committed to clock/bandwidth driver
  * @plane_mask_old: keeps track of the planes used in the previous commit
@@ -410,6 +411,7 @@ struct sde_crtc {
 	bool misr_enable_debugfs;
 	bool misr_reconfigure;
 	u32 misr_frame_count;
+	struct kthread_delayed_work idle_notify_work;
 
 	struct sde_power_event *power_event;
 
@@ -508,7 +510,6 @@ struct sde_line_insertion_param {
  * @input_fence_timeout_ns : Cached input fence timeout, in ns
  * @num_dim_layers: Number of dim layers
  * @cwb_enc_mask  : encoder mask populated during atomic_check if CWB is enabled
- * @cached_cwb_enc_mask  : cached encoder mask populated during atomic_check if CWB is enabled
  * @dim_layer: Dim layer configs
  * @num_ds: Number of destination scalers to be configured
  * @num_ds_enabled: Number of destination scalers enabled
@@ -547,7 +548,6 @@ struct sde_crtc_state {
 	uint64_t input_fence_timeout_ns;
 	uint32_t num_dim_layers;
 	uint32_t cwb_enc_mask;
-	uint32_t cached_cwb_enc_mask;
 	struct sde_hw_dim_layer dim_layer[SDE_MAX_DIM_LAYERS];
 	uint32_t num_ds;
 	uint32_t num_ds_enabled;
@@ -648,19 +648,6 @@ int sde_crtc_reset_hw(struct drm_crtc *crtc, struct drm_crtc_state *old_state,
 	bool recovery_events);
 
 /**
- * sde_crtc_dump_fences - dump info for input fences of each crtc plane
- * @crtc: Pointer to DRM crtc instance
- */
-void sde_crtc_dump_fences(struct drm_crtc *crtc);
-
-/**
- * sde_crtc_is_fence_signaled - check if all fences have been signaled
- * @crtc: Pointer to DRM crtc instance
- * Returns: true if all fences are signaled, otherwise false.
- */
-bool sde_crtc_is_fence_signaled(struct drm_crtc *crtc);
-
-/**
  * sde_crtc_request_frame_reset - requests for next frame reset
  * @crtc: Pointer to drm crtc object
  * @encoder: Pointer to drm encoder object
@@ -669,9 +656,6 @@ static inline int sde_crtc_request_frame_reset(struct drm_crtc *crtc,
 		struct drm_encoder *encoder)
 {
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
-
-	if (test_bit(HW_FENCE_IN_FENCES_ENABLE, sde_crtc->hwfence_features_mask))
-		sde_crtc_dump_fences(crtc);
 
 	if (sde_crtc->frame_trigger_mode == FRAME_DONE_WAIT_POSTED_START ||
 			!sde_encoder_is_dsi_display(encoder))

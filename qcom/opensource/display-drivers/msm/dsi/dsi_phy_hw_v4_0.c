@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/math64.h>
@@ -235,26 +235,6 @@ void dsi_phy_hw_v4_0_commit_phy_timing(struct dsi_phy_hw *phy,
 }
 
 /**
- * calc_cmn_lane_ctrl0() - Calculate the value to be set for
- *			   DSIPHY_CMN_LANE_CTRL0 register.
- * @cfg:      Per lane configurations for timing, strength and lane
- *	      configurations.
- */
-static inline u32 dsi_phy_hw_calc_cmn_lane_ctrl0(struct dsi_phy_cfg *cfg)
-{
-	u32 cmn_lane_ctrl0 = 0;
-
-	/* Only enable lanes that are required */
-	cmn_lane_ctrl0 |= ((cfg->data_lanes & DSI_DATA_LANE_0) ? BIT(0) : 0);
-	cmn_lane_ctrl0 |= ((cfg->data_lanes & DSI_DATA_LANE_1) ? BIT(1) : 0);
-	cmn_lane_ctrl0 |= ((cfg->data_lanes & DSI_DATA_LANE_2) ? BIT(2) : 0);
-	cmn_lane_ctrl0 |= ((cfg->data_lanes & DSI_DATA_LANE_3) ? BIT(3) : 0);
-	cmn_lane_ctrl0 |= BIT(4);
-
-	return cmn_lane_ctrl0;
-}
-
-/**
  * cphy_enable() - Enable CPHY hardware
  * @phy:      Pointer to DSI PHY hardware object.
  * @cfg:      Per lane configurations for timing, strength and lane
@@ -274,7 +254,6 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 	u32 glbl_rescode_top_ctrl = 0;
 	u32 glbl_rescode_bot_ctrl = 0;
 	bool less_than_1500_mhz = false;
-	u32 cmn_lane_ctrl0 = 0;
 
 	/* Alter PHY configurations if data rate less than 1.5GHZ*/
 	if (cfg->bit_clk_rate_hz <= 1500000000)
@@ -338,8 +317,7 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 	/* Remove power down from all blocks */
 	DSI_W32(phy, DSIPHY_CMN_CTRL_0, 0x7f);
 
-	cmn_lane_ctrl0 = dsi_phy_hw_calc_cmn_lane_ctrl0(cfg);
-	DSI_W32(phy, DSIPHY_CMN_LANE_CTRL0, cmn_lane_ctrl0);
+	DSI_W32(phy, DSIPHY_CMN_LANE_CTRL0, 0x17);
 
 	switch (cfg->pll_source) {
 	case DSI_PLL_SOURCE_STANDALONE:
@@ -392,7 +370,6 @@ static void dsi_phy_hw_dphy_enable(struct dsi_phy_hw *phy,
 	u32 glbl_rescode_bot_ctrl = 0;
 	bool split_link_enabled;
 	u32 lanes_per_sublink;
-	u32 cmn_lane_ctrl0 = 0;
 
 	/* Alter PHY configurations if data rate less than 1.5GHZ*/
 	if (cfg->bit_clk_rate_hz <= 1500000000)
@@ -456,9 +433,8 @@ static void dsi_phy_hw_dphy_enable(struct dsi_phy_hw *phy,
 	DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_0, vreg_ctrl_0);
 	DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_1, vreg_ctrl_1);
 	DSI_W32(phy, DSIPHY_CMN_CTRL_3, 0x00);
-	DSI_W32(phy, DSIPHY_CMN_GLBL_STR_SWI_CAL_SEL_CTRL,
-					glbl_str_swi_cal_sel_ctrl);
-	DSI_W32(phy, DSIPHY_CMN_GLBL_HSTX_STR_CTRL_0, glbl_hstx_str_ctrl_0);
+	DSI_W32(phy, DSIPHY_CMN_GLBL_STR_SWI_CAL_SEL_CTRL, 0x03);
+	DSI_W32(phy, DSIPHY_CMN_GLBL_HSTX_STR_CTRL_0, 0xEE);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_PEMPH_CTRL_0, 0x00);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_TOP_CTRL,
 			glbl_rescode_top_ctrl);
@@ -481,8 +457,7 @@ static void dsi_phy_hw_dphy_enable(struct dsi_phy_hw *phy,
 	} else {
 		/* Remove power down from all blocks */
 		DSI_W32(phy, DSIPHY_CMN_CTRL_0, 0x7f);
-		cmn_lane_ctrl0 = dsi_phy_hw_calc_cmn_lane_ctrl0(cfg);
-		DSI_W32(phy, DSIPHY_CMN_LANE_CTRL0, cmn_lane_ctrl0);
+		DSI_W32(phy, DSIPHY_CMN_LANE_CTRL0, 0x1F);
 	}
 
 	/* Select full-rate mode */
@@ -788,7 +763,8 @@ void dsi_phy_hw_v4_0_dyn_refresh_config(struct dsi_phy_hw *phy,
 					struct dsi_phy_cfg *cfg, bool is_master)
 {
 	u32 reg;
-	u32 cmn_lane_ctrl0 = dsi_phy_hw_calc_cmn_lane_ctrl0(cfg);
+	bool is_cphy = (cfg->phy_type == DSI_PHY_TYPE_CPHY) ?
+			true : false;
 
 	if (is_master) {
 		DSI_DYN_REF_REG_W(phy->dyn_pll_base, DSI_DYN_REFRESH_PLL_CTRL19,
@@ -814,7 +790,7 @@ void dsi_phy_hw_v4_0_dyn_refresh_config(struct dsi_phy_hw *phy,
 			  cfg->timing.lane_v4[12], cfg->timing.lane_v4[13]);
 		DSI_DYN_REF_REG_W(phy->dyn_pll_base, DSI_DYN_REFRESH_PLL_CTRL26,
 			  DSIPHY_CMN_CTRL_0, DSIPHY_CMN_LANE_CTRL0,
-			  0x7f, cmn_lane_ctrl0);
+			  0x7f, is_cphy ? 0x17 : 0x1f);
 
 	} else {
 		reg = DSI_R32(phy, DSIPHY_CMN_CLK_CFG1);
@@ -849,7 +825,7 @@ void dsi_phy_hw_v4_0_dyn_refresh_config(struct dsi_phy_hw *phy,
 			  cfg->timing.lane_v4[13], 0x7f);
 		DSI_DYN_REF_REG_W(phy->dyn_pll_base, DSI_DYN_REFRESH_PLL_CTRL9,
 			  DSIPHY_CMN_LANE_CTRL0, DSIPHY_CMN_CTRL_2,
-			  cmn_lane_ctrl0, 0x40);
+			  is_cphy ? 0x17 : 0x1f, 0x40);
 		/*
 		 * fill with dummy register writes since controller will blindly
 		 * send these values to DSI PHY.
@@ -858,7 +834,7 @@ void dsi_phy_hw_v4_0_dyn_refresh_config(struct dsi_phy_hw *phy,
 		while (reg <= DSI_DYN_REFRESH_PLL_CTRL29) {
 			DSI_DYN_REF_REG_W(phy->dyn_pll_base, reg,
 				  DSIPHY_CMN_LANE_CTRL0, DSIPHY_CMN_CTRL_0,
-				  cmn_lane_ctrl0, 0x7f);
+				  is_cphy ? 0x17 : 0x1f, 0x7f);
 			reg += 0x4;
 		}
 
@@ -988,4 +964,12 @@ void dsi_phy_hw_v4_0_set_continuous_clk(struct dsi_phy_hw *phy, bool enable)
 	}
 
 	wmb(); /* make sure request is set */
+}
+
+void dsi_phy_hw_v4_0_phy_idle_off(struct dsi_phy_hw *phy)
+{
+	if (phy->version >= DSI_PHY_VERSION_4_2 && phy->clamp_enable) {
+		DSI_W32(phy, DSIPHY_CMN_CTRL_4, 0x1);
+		DSI_W32(phy, DSIPHY_CMN_CTRL_3, 0x0);
+	}
 }
